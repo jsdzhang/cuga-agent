@@ -15,6 +15,7 @@ from cuga.backend.cuga_graph.nodes.task_decomposition_planning.task_analyzer_age
 from cuga.backend.cuga_graph.nodes.task_decomposition_planning.task_analyzer_agent.tasks.app_matcher import (
     AppMatch,
 )
+from cuga.backend.cuga_graph.utils.nodes_names import NodeNames
 from cuga.config import settings
 from langgraph.types import Command
 from loguru import logger
@@ -126,7 +127,7 @@ class TaskAnalyzer(BaseNode):
     @staticmethod
     async def node_handler(
         state: AgentState, agent: TaskAnalyzerAgent, name: str
-    ) -> Command[Literal['TaskDecompositionAgent']]:
+    ) -> Command[Literal['TaskDecompositionAgent', 'FinalAnswerAgent']]:
         if not settings.features.chat:
             var_manager.reset()
         if not state.sender or state.sender == "ChatAgent":
@@ -138,6 +139,55 @@ class TaskAnalyzer(BaseNode):
                 state.current_app_description,
             )
             logger.debug(f"all apps are: {state.api_intent_relevant_apps}")
+
+            if not state.api_intent_relevant_apps or len(state.api_intent_relevant_apps) == 0:
+                logger.debug("No apps matched, routing to FinalAnswerAgent")
+                try:
+                    all_apps = await get_apps()
+                    connected_apps = []
+                    for app in all_apps:
+                        app_info = f"- **{app.name}**"
+                        if app.description:
+                            app_info += f": {app.description}"
+                        app_info += " (API)"
+                        connected_apps.append(app_info)
+
+                    if state.current_app:
+                        web_app_name = state.current_app
+                        web_app_description = state.current_app_description or "Web application"
+                        connected_apps.append(f"- **{web_app_name}**: {web_app_description} (WEB)")
+
+                    apps_list = (
+                        "\n".join(connected_apps) if connected_apps else "No apps are currently connected."
+                    )
+
+                    message = (
+                        "I wasn't able to find any applications that match your request. "
+                        "This might be because the task doesn't match any of the available applications.\n\n"
+                        f"**Connected Applications:**\n{apps_list}\n\n"
+                        "Please try rephrasing your request or check if the necessary applications are connected."
+                    )
+
+                    state.final_answer = message
+                    state.sender = name
+                    tracker.collect_step(
+                        step=Step(
+                            name=name,
+                            data=json.dumps(
+                                {"message": "No apps matched", "connected_apps_count": len(connected_apps)}
+                            ),
+                        )
+                    )
+                    return Command(update=state.model_dump(), goto=NodeNames.FINAL_ANSWER_AGENT)
+                except Exception as e:
+                    logger.warning(f"Failed to get all apps: {e}")
+                    message = (
+                        "I wasn't able to find any applications that match your request. "
+                        "Please try rephrasing your request or check if the necessary applications are connected."
+                    )
+                    state.final_answer = message
+                    state.sender = name
+                    return Command(update=state.model_dump(), goto=NodeNames.FINAL_ANSWER_AGENT)
             data_representation = json.dumps([p.model_dump() for p in state.api_intent_relevant_apps])
             try:
                 if settings.advanced_features.benchmark == "appworld":

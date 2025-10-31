@@ -543,11 +543,9 @@ class MCPManager:
 
     async def _initialize_fastmcp_client(self, mcp_servers: List[tuple]):
         """Initialize FastMCP client with all MCP servers using appropriate transport"""
-        if not FastMCPClient or not mcp_servers:
-            logger.error("FastMCP not available, using fallback")
-            if not FastMCPClient:
-                print("FastMCP not available, using fallback")
-                await self._fallback_mcp_connection(mcp_servers)
+        if not FastMCPClient:
+            raise Exception("FastMCP not available. Please install fastmcp package.")
+        if not mcp_servers:
             return
 
         try:
@@ -619,9 +617,8 @@ class MCPManager:
                     raise
 
         except Exception as e:
-            print(f"Error initializing MCP servers: {e}")
-            print("Falling back to mock implementation")
-            await self._fallback_mcp_connection(mcp_servers)
+            logger.error(f"Error initializing MCP servers: {e}")
+            raise
 
     def _create_transport(self, name: str, config: ServiceConfig):
         """Create appropriate transport based on configuration"""
@@ -769,63 +766,6 @@ class MCPManager:
                 flattened[key] = value
 
         return flattened
-
-    async def _fallback_mcp_connection(self, mcp_servers: List[tuple]):
-        """Fallback mock implementation when FastMCP is not available"""
-        print("Using fallback mock MCP implementation")
-
-        for name, config in mcp_servers:
-            try:
-                print(f"Mock connecting to MCP server {name} at {config.url}")
-
-                # Mock tools for demonstration
-                mock_tools = [
-                    {
-                        "name": "get_my_accounts",
-                        "description": "Get my territory accounts",
-                        "inputSchema": {"type": "object", "properties": {}, "required": []},
-                    },
-                    {
-                        "name": "get_accounts_tpp",
-                        "description": "Retrieve accounts from TPP",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "client_status": {"type": "string"},
-                                "coverage_id": {"type": "string"},
-                                "product_name": {"type": "string"},
-                            },
-                            "required": [],
-                        },
-                    },
-                ]
-
-                self.schemas[name] = {"tools": mock_tools}
-
-                # Register tools with server prefix and flatten parameters
-                for tool in mock_tools:
-                    prefixed_name = f"{name}_{tool['name']}"
-
-                    # Use OpenAPITransformer to flatten parameters
-                    input_schema = tool.get('inputSchema', {})
-                    flattened_params = self._flatten_tool_parameters(input_schema)
-
-                    tool_dict = {
-                        "type": "function",
-                        "function": {
-                            "name": prefixed_name,
-                            "description": tool.get('description', ''),
-                            "parameters": flattened_params,
-                        },
-                    }
-                    self.tools_by_server[name].append(tool_dict)
-                    self.server_by_tool[prefixed_name] = name
-
-                print(f"Mock connected to MCP server {name} with {len(mock_tools)} tools")
-                self.mcp_clients[name] = config.url
-
-            except Exception as e:
-                print(f"Error in fallback connection to MCP server {name}: {e}")
 
     async def _call_mcp_server_tool(self, server_name: str, tool_name: str, args: dict):
         """Call a tool on an external MCP server using FastMCP client with SSE transport"""

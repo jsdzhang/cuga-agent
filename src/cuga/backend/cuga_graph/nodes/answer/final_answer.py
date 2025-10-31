@@ -2,6 +2,7 @@ import functools
 import json
 from typing import Literal, Dict, Callable
 
+from langchain_core.messages import AIMessage
 from langgraph.types import Command
 
 from cuga.backend.activity_tracker.tracker import ActivityTracker, Step
@@ -83,7 +84,26 @@ class FinalAnswerNode(BaseNode):
         # Handle direct chat calls (no processing needed)
         if state.sender == NodeNames.CHAT_AGENT:
             state.sender = name
-            state.final_answer = state.chat_messages[-1].content
+            final_answer_content = state.chat_messages[-1].content
+            state.final_answer = final_answer_content
+            final_answer_output = FinalAnswerOutput(
+                thoughts=["Chat response provided directly."], final_answer=final_answer_content
+            )
+            state.messages.append(AIMessage(content=final_answer_output.model_dump_json(), name=name))
+            tracker.collect_step(step=Step(name=name, data=final_answer_output.model_dump_json()))
+            return Command(update=state.model_dump(), goto=NodeNames.END)
+
+        # Handle TaskAnalyzerAgent when final_answer is already set (no apps matched)
+        if state.sender == NodeNames.TASK_ANALYZER_AGENT and state.final_answer:
+            state.sender = name
+            final_answer_output = FinalAnswerOutput(
+                thoughts=[
+                    "No applications matched the request. Providing available applications information."
+                ],
+                final_answer=state.final_answer,
+            )
+            state.messages.append(AIMessage(content=final_answer_output.model_dump_json(), name=name))
+            tracker.collect_step(step=Step(name=name, data=final_answer_output.model_dump_json()))
             return Command(update=state.model_dump(), goto=NodeNames.END)
 
         # Main processing: generate final answer

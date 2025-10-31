@@ -8,6 +8,7 @@ import sys
 import threading
 import platform
 import psutil
+import httpx
 from typing import List, Optional
 from loguru import logger
 from cuga.config import settings, PACKAGE_ROOT, get_user_data_path, TRAJECTORY_DATA_DIR
@@ -58,6 +59,37 @@ def kill_processes_by_port(ports: List[int]):
                     continue
         except Exception as e:
             logger.debug(f"Error killing processes on port {port}: {e}")
+
+
+def wait_for_registry_server(port: int, max_retries: int = 30, retry_interval: float = 0.5):
+    """
+    Wait for the registry server to be ready by pinging its health endpoint.
+
+    Args:
+        port: The port number the registry server is running on
+        max_retries: Maximum number of retry attempts (default: 30)
+        retry_interval: Time in seconds between retries (default: 0.5)
+
+    Raises:
+        TimeoutError: If the server doesn't become ready within max_retries attempts
+    """
+    url = f"http://127.0.0.1:{port}/"
+
+    for attempt in range(max_retries):
+        try:
+            with httpx.Client(timeout=1.0) as client:
+                response = client.get(url)
+                if response.status_code == 200:
+                    logger.info("Registry server is ready!")
+                    return
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
+            if attempt < max_retries - 1:
+                time.sleep(retry_interval)
+            else:
+                raise TimeoutError(
+                    f"Registry server did not become ready after {max_retries * retry_interval:.1f} seconds. "
+                    f"Please check if the server started correctly on port {port}."
+                )
 
 
 def kill_process_tree(pid):
@@ -752,7 +784,7 @@ def evaluate(
             )
             # Wait for registry to start
             logger.info("Waiting for registry to start...")
-            time.sleep(7)
+            wait_for_registry_server(settings.server_ports.registry)
 
             # Then start demo - using explicit fastapi command
             run_direct_service(
