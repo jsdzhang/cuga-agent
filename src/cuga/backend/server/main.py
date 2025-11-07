@@ -4,6 +4,7 @@ import platform
 import re
 import shutil
 import os
+import subprocess
 import uuid
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Union, Optional
@@ -250,12 +251,15 @@ async def lifespan(app: FastAPI):
         "yes",
         "on",
     ):
-        if platform.system() == 'Darwin':  # macOS
-            os.system(f'open {url}')
-        elif platform.system() == 'Windows':  # Windows
-            os.system(f'start {url}')
-        else:  # Linux
-            os.system(f'xdg-open {url}')
+        try:
+            if platform.system() == 'Darwin':  # macOS
+                subprocess.run(['open', url], check=False)
+            elif platform.system() == 'Windows':  # Windows
+                subprocess.run(['cmd', '/c', 'start', '', url], check=False, shell=False)
+            else:  # Linux
+                subprocess.run(['xdg-open', url], check=False)
+        except Exception as e:
+            logger.warning(f"Failed to open browser: {e}")
     yield
     logger.info("Application is shutting down...")
 
