@@ -7,7 +7,7 @@
       "request": "launch",
       "module": "uvicorn",
       "args": ["cuga.backend.tools_env.registry.registry.api_registry_server:app", "--port", "8001"],
-      "cwd": "${workspaceFolder}",
+      "cwd": "${workspaceFolder}/src",
       "env": {
         "PYTHONUNBUFFERED": "1",
         "MCP_SERVERS_FILE": "mcp_servers_appworld.yaml"
@@ -24,7 +24,7 @@
       "cwd": "${workspaceFolder}",
       "env": {
         "PYTHONUNBUFFERED": "1",
-        "MCP_SERVERS_FILE": "mcp_servers.yaml"
+        "MCP_SERVERS_FILE": "${workspaceFolder}/src/cuga/backend/tools_env/registry/config/mcp_servers.yaml"
       },
       "console": "integratedTerminal",
       "python": "${workspaceFolder}/.venv/bin/python",
@@ -39,7 +39,7 @@
       "name": "CUGA Demo Server - Windows",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/cuga/backend/server/debug_server.py",
+      "program": "${workspaceFolder}/src/cuga/backend/server/debug_server.py",
       "env": {
         "PYTHONPATH": "${workspaceFolder}",
         "PYTHONUNBUFFERED": "1",
@@ -75,7 +75,8 @@
       "type": "python",
       "request": "launch",
       "module": "fastapi",
-      "args": ["dev", "cuga/backend/server/main.py", "--no-reload", "--port=8005"],
+      "envFile": "${workspaceFolder}/.env",
+      "args": ["dev", "src/cuga/backend/server/main.py", "--no-reload", "--port=8005"],
       "cwd": "${workspaceFolder}",
       "env": {
         "PYTHONUNBUFFERED": "1"
