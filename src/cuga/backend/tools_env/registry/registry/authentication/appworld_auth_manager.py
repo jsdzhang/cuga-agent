@@ -1,10 +1,11 @@
 import requests
 from cuga.backend.tools_env.registry.registry.authentication.base_auth_manager import BaseAuthManager
 from loguru import logger
+from cuga.config import settings
 
 
 class AppWorldAuthManager(BaseAuthManager):
-    def __init__(self, base_url="http://localhost:9000"):
+    def __init__(self, base_url="http://localhost:" + str(settings.server_ports.apis_url)):
         super().__init__()
         self.base_url = base_url.rstrip("/")
         self._account_passwords = self._load_account_passwords()
