@@ -6,7 +6,6 @@ from langchain_core.messages import HumanMessage, ToolCall, BaseMessage
 from loguru import logger
 
 from cuga.backend.activity_tracker.tracker import ActivityTracker, Step
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.cuga_graph.nodes.shared.base_agent import create_partial
 from cuga.backend.cuga_graph.nodes.chat.chat_agent.chat_agent import ChatAgent
 from cuga.backend.cuga_graph.nodes.shared.base_node import BaseNode
@@ -22,7 +21,6 @@ from cuga.config import settings
 
 
 tracker = ActivityTracker()
-var_manager = VariablesManager()
 
 ENABLE_SAVE_REUSE = settings.features.save_reuse
 
@@ -126,11 +124,11 @@ class ChatNode(BaseNode):
             # Add to variable manager
 
             var_name = f"tool_result_{str(uuid.uuid4())[:5]}"
-            var_manager.add_variable(
+            state.variables_manager.add_variable(
                 parsed_result, var_name, f"Result of tool {tool_name} with args {tool_args}"
             )
             state.sender = "ChatAgentTool"
-            state.last_planner_answer = var_manager.present_variable(var_name)
+            state.last_planner_answer = state.variables_manager.present_variable(var_name)
             return Command(update=state.model_dump(), goto=NodeNames.FINAL_ANSWER_AGENT)
 
         if (
@@ -150,7 +148,7 @@ class ChatNode(BaseNode):
         # Process chat input
         state.sender = name
         state.chat_agent_messages.append(HumanMessage(content=state.input))
-        res: BaseMessage = await agent.invoke(state.chat_agent_messages)
+        res: BaseMessage = await agent.invoke(state.chat_agent_messages, state)
         state.chat_agent_messages.append(res)
         # Handle tool calls - require human approval
         if ENABLE_SAVE_REUSE and res.tool_calls and res.tool_calls[0].get("name") == "run_new_flow":
@@ -182,7 +180,7 @@ class ChatNode(BaseNode):
                 state.input = res.tool_calls[0].get("args").get("task")
             return Command(update=state.model_dump(), goto="TaskAnalyzerAgent")
         # Regular chat response - add to messages and continue+
-        res.content = var_manager.replace_variables_placeholders(res.content)
+        res.content = state.variables_manager.replace_variables_placeholders(res.content)
         state.messages.append(res)
         tracker.collect_step(
             step=Step(

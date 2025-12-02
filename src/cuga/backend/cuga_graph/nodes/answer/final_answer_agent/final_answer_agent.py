@@ -6,7 +6,6 @@ from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.cuga_graph.nodes.shared.base_agent import BaseAgent
 from cuga.backend.cuga_graph.nodes.answer.final_answer_agent.prompts.load_prompt import (
     FinalAnswerOutput,
@@ -23,7 +22,6 @@ from cuga.configurations.instructions_manager import InstructionsManager
 instructions_manager = InstructionsManager()
 llm_manager = LLMManager()
 tracker = ActivityTracker()
-var_manager = VariablesManager()
 
 
 class FinalAnswerAgent(BaseAgent):
@@ -62,11 +60,11 @@ class FinalAnswerAgent(BaseAgent):
     async def run(self, input_variables: AgentState) -> AIMessage:
         if settings.features.final_answer:
             data = input_variables.model_dump()
-            data["variable_summary"] = var_manager.get_variables_summary(last_n=2)
+            data["variable_summary"] = input_variables.variables_manager.get_variables_summary(last_n=2)
             data["instructions"] = instructions_manager.get_instructions(self.name)
             return await self.chain.ainvoke(data)
         else:
-            last_variable_name, last_variable = var_manager.get_last_variable()
+            last_variable_name, last_variable = input_variables.variables_manager.get_last_variable()
             return AIMessage(
                 content=json.dumps(
                     FinalAnswerOutput(
@@ -74,7 +72,7 @@ class FinalAnswerAgent(BaseAgent):
                         if input_variables.sender == "ReuseAgent"
                         else input_variables.last_planner_answer
                         + (
-                            f"\n\n{last_variable.description}\n\n---\n\n{var_manager.present_variable(last_variable_name)}"
+                            f"\n\n{last_variable.description}\n\n---\n\n{input_variables.variables_manager.present_variable(last_variable_name)}"
                             if last_variable_name
                             else ""
                         ),

@@ -13,11 +13,9 @@ from cuga.backend.llm.utils.helpers import load_prompt_simple
 from cuga.config import settings
 from cuga.backend.tools_env.code_sandbox.sandbox import run_code
 from loguru import logger
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.configurations.instructions_manager import InstructionsManager
 
 instructions_manager = InstructionsManager()
-var_manager = VariablesManager()
 llm_manager = LLMManager()
 
 
@@ -152,7 +150,7 @@ class CodeAgent(BaseAgent):
     async def run(self, input_variables: AgentState = None) -> AIMessage:
         context_variables = input_variables.coder_variables
         context_variables_preview = (
-            var_manager.get_variables_summary(context_variables)
+            input_variables.variables_manager.get_variables_summary(context_variables)
             if context_variables and len(context_variables) > 0
             else "N/A"
         )
@@ -177,7 +175,7 @@ class CodeAgent(BaseAgent):
 
         # Run code in sandbox
         try:
-            execution_output, _ = await run_code(code)
+            execution_output, _ = await run_code(code, state=input_variables)
         except Exception as e:
             logger.error(f"Error running code: {e}")
             execution_output = str(e)
@@ -195,7 +193,7 @@ class CodeAgent(BaseAgent):
             }
             logger.warning("Not json output")
 
-        var_manager.add_variable(
+        input_variables.variables_manager.add_variable(
             name=out.get("variable_name"),
             description=out.get("description", ""),
             value=out.get("value"),
@@ -207,7 +205,7 @@ class CodeAgent(BaseAgent):
                 input={
                     "api_calling_plan": input_variables.api_planner_codeagent_plan,
                     "execution_output": remaining_text[:50000],
-                    "variable_summary": var_manager.get_variables_summary(),
+                    "variable_summary": input_variables.variables_manager.get_variables_summary(),
                 }
             )
 

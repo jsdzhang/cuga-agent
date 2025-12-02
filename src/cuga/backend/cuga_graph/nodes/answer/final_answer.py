@@ -6,7 +6,6 @@ from langchain_core.messages import AIMessage
 from langgraph.types import Command
 
 from cuga.backend.activity_tracker.tracker import ActivityTracker, Step
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.cuga_graph.nodes.answer.final_answer_agent.final_answer_agent import FinalAnswerAgent
 from cuga.backend.cuga_graph.nodes.answer.final_answer_agent.prompts.load_prompt import FinalAnswerOutput
 from cuga.backend.cuga_graph.nodes.shared.base_node import BaseNode
@@ -18,7 +17,6 @@ from cuga.backend.cuga_graph.state.agent_state import AgentState
 from cuga.config import settings
 from cuga.backend.cuga_graph.utils.nodes_names import NodeNames, ActionIds, MessagePrefixes
 
-var_manager = VariablesManager()
 tracker = ActivityTracker()
 
 # Feature flag for human-in-the-loop functionality
@@ -147,7 +145,7 @@ class FinalAnswerNode(BaseNode):
         tracker.collect_step(Step(name=name, data=final_answer_output.model_dump_json()))
 
         # Replace variables and update state
-        final_answer_output.final_answer = var_manager.replace_variables_placeholders(
+        final_answer_output.final_answer = state.variables_manager.replace_variables_placeholders(
             final_answer_output.final_answer
         )
         state.final_answer = final_answer_output.final_answer

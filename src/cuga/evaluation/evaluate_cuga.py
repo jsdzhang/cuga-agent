@@ -1,5 +1,4 @@
 from cuga.backend.activity_tracker.tracker import ActivityTracker
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.cuga_graph.utils.controller import AgentRunner, ExperimentResult
 from loguru import logger
 import traceback
@@ -13,7 +12,6 @@ from pathlib import Path
 import os
 
 tracker = ActivityTracker()
-var_manager = VariablesManager()
 
 
 class ExpectedOutput(BaseModel):
@@ -144,10 +142,12 @@ async def run_cuga(test_file_path: str, result_file_path: str) -> (List[TestCase
         for i, task in enumerate(test_cases[app]):
             try:
                 tracker.reset(intent=task.intent, task_id=f"{app}_{str(i)}")
-                var_manager.reset()
                 result = await agent_runner.run_task_generic(
                     eval_mode=False, goal=task.intent, current_datetime=tracker.current_date
                 )
+                # Reset variables after task completion using the current state
+                state = agent_runner.get_current_state()
+                state.variables_manager.reset()
                 filtered_steps = [step for step in result.steps if "api_call" in step.name]
                 result.steps = filtered_steps
                 results.append(result)

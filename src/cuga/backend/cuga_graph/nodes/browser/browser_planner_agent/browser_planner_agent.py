@@ -6,7 +6,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 from langchain_core.language_models import BaseChatModel
 from cuga.backend.activity_tracker.tracker import ActivityTracker
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.cuga_graph.nodes.shared.base_agent import BaseAgent
 from cuga.backend.cuga_graph.state.agent_state import AgentState
 from cuga.backend.cuga_graph.nodes.browser.browser_planner_agent.prompts.load_prompt import (
@@ -19,7 +18,6 @@ from cuga.config import settings
 
 llm_manager = LLMManager()
 tracker = ActivityTracker()
-var_manager = VariablesManager()
 
 
 class BrowserPlannerAgent(BaseAgent):
@@ -44,7 +42,7 @@ class BrowserPlannerAgent(BaseAgent):
         data = input_variables.model_dump()
         data.update({"use_vision": settings.advanced_features.use_vision})
         if settings.advanced_features.mode == "hybrid":
-            data["variables_history"] = var_manager.get_variables_summary(last_n=1)
+            data["variables_history"] = input_variables.variables_manager.get_variables_summary(last_n=1)
         else:
             data["variables_history"] = ""
         if settings.advanced_features.use_vision and getattr(tracker, "images", None):

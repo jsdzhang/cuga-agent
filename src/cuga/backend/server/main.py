@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import AIMessage
 from loguru import logger
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
+from cuga.backend.cuga_graph.state.agent_state import VariablesManager
 
 from cuga.backend.activity_tracker.tracker import ActivityTracker
 from cuga.backend.tools_env.registry.utils.api_utils import get_apps, get_apis
@@ -418,13 +418,8 @@ async def event_stream(query: str, api_mode=False, resume=None):
                         )
                         logger.debug("!!!!!!!Task is done!!!!!!!")
 
-                        # Get variables metadata from var_manager
-                        from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import (
-                            VariablesManager,
-                        )
-
-                        var_manager = VariablesManager()
-                        variables_metadata = var_manager.get_all_variables_metadata()
+                        # Get variables metadata from state
+                        variables_metadata = app_state.state.variables_manager.get_all_variables_metadata()
 
                         yield StreamEvent(
                             name="Answer",

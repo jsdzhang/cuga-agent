@@ -7,7 +7,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
 from cuga.backend.activity_tracker.tracker import ActivityTracker
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.cuga_graph.nodes.shared.base_agent import BaseAgent
 from cuga.backend.cuga_graph.state.agent_state import AgentState
 from cuga.backend.cuga_graph.nodes.task_decomposition_planning.plan_controller_agent.prompts.load_prompt import (
@@ -22,7 +21,6 @@ from loguru import logger
 
 instructions_manager = InstructionsManager()
 tracker = ActivityTracker()
-var_manager = VariablesManager()
 llm_manager = LLMManager()
 
 
@@ -58,7 +56,7 @@ class PlanControllerAgent(BaseAgent):
         data["task_decomposition"] = task_input["task_decomposition"]
         data["stm_all_history"] = task_input["stm_all_history"]
         # data["sub_tasks_progress"] = input_variables.sub_tasks_progress or []
-        data["variables_history"] = var_manager.get_variables_summary(last_n=6)
+        data["variables_history"] = input_variables.variables_manager.get_variables_summary(last_n=6)
         data["instructions"] = instructions_manager.get_instructions(self.name)
         # Add API applications list
         data["api_applications_list"] = [

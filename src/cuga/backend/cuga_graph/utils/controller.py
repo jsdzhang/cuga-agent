@@ -45,11 +45,13 @@ class ExperimentResult(BaseModel):
 
 
 class AgentRunner:
-    def __init__(self, browser_enabled=True):
+    def __init__(self, browser_enabled=True, thread_id: str = "1"):
         self.browser_enabled = browser_enabled
+        self.thread_id = thread_id
         self.env = None
         self.obs = None
         self.info = None
+        self.agent_loop_obj = None
         pass
 
     @staticmethod
@@ -160,6 +162,23 @@ class AgentRunner:
         tracker.collect_image(pu_answer.img)
         state.read_page = pu_answer.page_content
 
+    def get_current_state(self) -> AgentState:
+        """
+        Get the current agent state from the graph.
+
+        Returns:
+            AgentState: The current state from the graph
+
+        Raises:
+            RuntimeError: If agent_loop_obj is not initialized
+        """
+        if self.agent_loop_obj is None:
+            raise RuntimeError("Agent loop not initialized. Call run_task_generic first.")
+
+        return AgentState(
+            **self.agent_loop_obj.graph.get_state({"configurable": {"thread_id": self.thread_id}}).values
+        )
+
     async def run_task_generic(
         self,
         eval_mode=False,
@@ -176,27 +195,27 @@ class AgentRunner:
         )
         state.sites = sites
         await self.browser_update_state(state)
-        thread_id = "1"
 
         langfuse_handler = None
         if settings.advanced_features.langfuse_tracing and LangfuseCallbackHandler is not None:
             langfuse_handler = LangfuseCallbackHandler()
             logger.debug("Langfuse tracing enabled for agent loop")
 
-        agent_loop_obj = AgentLoop(
-            thread_id=thread_id, langfuse_handler=langfuse_handler, graph=agent.graph, env_pointer=self.env
+        self.agent_loop_obj = AgentLoop(
+            thread_id=self.thread_id,
+            langfuse_handler=langfuse_handler,
+            graph=agent.graph,
+            env_pointer=self.env,
         )
         state.current_datetime = current_datetime if current_datetime else datetime.datetime.now().isoformat()
         state.pi = tracker.pi
-        agent_response = await agent_loop_obj.run(state=state)
+        agent_response = await self.agent_loop_obj.run(state=state)
         reward = 0.0
         i = 0
         while True:
             if agent_response.has_tools:
                 i += 1
-                state = AgentState(
-                    **agent_loop_obj.graph.get_state({"configurable": {"thread_id": thread_id}}).values
-                )
+                state = self.get_current_state()
                 feedback = await AgentRunner.process_event_async(
                     state.messages[-1].tool_calls,
                     state.elements,
@@ -216,8 +235,8 @@ class AgentRunner:
                 if eval_mode and reward == 1.0 or len(tracker.steps) >= settings.evaluation.max_steps:
                     break
                 await self.browser_update_state(state)
-                agent_loop_obj.graph.update_state({"configurable": {"thread_id": thread_id}}, state)
-                agent_response = await agent_loop_obj.run(state=None)
+                self.agent_loop_obj.graph.update_state({"configurable": {"thread_id": self.thread_id}}, state)
+                agent_response = await self.agent_loop_obj.run(state=None)
             elif agent_response.end:
                 tracker.final_answer = agent_response.answer
                 if self.env:
@@ -274,15 +293,17 @@ class AgentRunner:
         )
         state.sites = sites
         await self.browser_update_state(state)
-        thread_id = "1"
 
         langfuse_handler = None
         if settings.advanced_features.langfuse_tracing and LangfuseCallbackHandler is not None:
             langfuse_handler = LangfuseCallbackHandler()
             logger.debug("Langfuse tracing enabled for agent loop")
 
-        agent_loop_obj = AgentLoop(
-            thread_id=thread_id, langfuse_handler=langfuse_handler, graph=agent.graph, env_pointer=self.env
+        self.agent_loop_obj = AgentLoop(
+            thread_id=self.thread_id,
+            langfuse_handler=langfuse_handler,
+            graph=agent.graph,
+            env_pointer=self.env,
         )
         state.current_datetime = current_datetime if current_datetime else datetime.datetime.now().isoformat()
         state.pi = tracker.pi
@@ -291,7 +312,7 @@ class AgentRunner:
         first_time = True
         event = None
         while True:
-            agent_response = agent_loop_obj.run_stream(state=state if first_time else None)
+            agent_response = self.agent_loop_obj.run_stream(state=state if first_time else None)
             first_time = False
             final_event = None
             async for event in agent_response:
@@ -300,11 +321,7 @@ class AgentRunner:
                 if isinstance(event, AgentLoopAnswer):
                     if event.has_tools:
                         i += 1
-                        state = AgentState(
-                            **agent_loop_obj.graph.get_state(
-                                {"configurable": {"thread_id": thread_id}}
-                            ).values
-                        )
+                        state = self.get_current_state()
                         feedback = await AgentRunner.process_event_async(
                             state.messages[-1].tool_calls,
                             state.elements,
@@ -323,7 +340,9 @@ class AgentRunner:
                         if eval_mode and reward == 1.0 or len(tracker.steps) >= settings.evaluation.max_steps:
                             break  # Break to handle final result outside the loop
                         await self.browser_update_state(state)
-                        agent_loop_obj.graph.update_state({"configurable": {"thread_id": thread_id}}, state)
+                        self.agent_loop_obj.graph.update_state(
+                            {"configurable": {"thread_id": self.thread_id}}, state
+                        )
                         # Break out of the async for loop to restart with new agent_response
                         break
                     elif event.end:

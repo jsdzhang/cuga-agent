@@ -1,4 +1,4 @@
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
+from cuga.backend.cuga_graph.state.agent_state import VariablesManager
 
 
 class TestVariablesManager:

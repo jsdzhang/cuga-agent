@@ -7,7 +7,6 @@ from cuga.backend.activity_tracker.tracker import ActivityTracker
 from cuga.backend.cuga_graph.nodes.shared.base_agent import BaseAgent
 from cuga.backend.cuga_graph.state.agent_state import AgentState
 from cuga.backend.cuga_graph.nodes.api.api_code_planner_agent.prompts.load_prompt import parser
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.llm.models import LLMManager
 from cuga.backend.llm.utils.helpers import load_prompt_simple
 from cuga.config import settings
@@ -16,7 +15,6 @@ from cuga.configurations.instructions_manager import InstructionsManager
 
 instructions_manager = InstructionsManager()
 llm_manager = LLMManager()
-var_manager = VariablesManager()
 tracker = ActivityTracker()
 
 
@@ -43,7 +41,7 @@ class APICodePlannerAgent(BaseAgent):
     async def run(self, input_variables: AgentState) -> BaseMessage:
         context_variables = input_variables.coder_variables
         context_variables_preview = (
-            var_manager.get_variables_summary(context_variables)
+            input_variables.variables_manager.get_variables_summary(context_variables)
             if context_variables and len(context_variables) > 0
             else "N/A"
         )

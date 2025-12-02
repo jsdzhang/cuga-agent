@@ -4,7 +4,6 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
 
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.cuga_graph.nodes.browser.action_agent.tools.tools import setup_tools
 from cuga.backend.cuga_graph.nodes.shared.base_agent import BaseAgent
 from cuga.backend.cuga_graph.state.agent_state import AgentState
@@ -13,7 +12,6 @@ from cuga.backend.llm.utils.helpers import load_prompt_simple
 from cuga.config import settings
 
 llm_manager = LLMManager()
-var_manager = VariablesManager()
 
 
 class ActionAgent(BaseAgent):
@@ -32,7 +30,7 @@ class ActionAgent(BaseAgent):
     def run(self, input_variables: AgentState) -> AIMessage:
         data = input_variables.model_dump()
         if settings.advanced_features.mode == "hybrid":
-            data["variables_history"] = var_manager.get_variables_summary(last_n=1)
+            data["variables_history"] = input_variables.variables_manager.get_variables_summary(last_n=1)
         else:
             data["variables_history"] = ""
 

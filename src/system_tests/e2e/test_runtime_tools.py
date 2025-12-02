@@ -10,6 +10,7 @@ from unittest.mock import patch
 from cuga.backend.activity_tracker.tracker import ActivityTracker
 from cuga.backend.tools_env.registry.utils.api_utils import get_apis, get_apps
 from cuga.backend.tools_env.code_sandbox.sandbox import run_code
+from cuga.backend.cuga_graph.state.agent_state import AgentState
 from cuga.backend.cuga_graph.utils.controller import AgentRunner as CugaAgent
 from system_tests.e2e.calculator_tool import (
     tools as calculator_tools,
@@ -163,7 +164,8 @@ print(f"API factorial result: {api_result2['result']}")
 '''
 
         # Run the code in sandbox
-        output, locals_dict = await run_code(code)
+        state = AgentState(input="test", url="")
+        output, locals_dict = await run_code(code, state)
         print(output)
         # Verify output contains expected results
         self.assertIn("10 + 5 = 15.0", output)
@@ -235,7 +237,8 @@ result = await call_api("calculator", "evaluate_expression", {"expression": "5 +
 print(f"Result 1: {result['result']}")
 '''
 
-        output1, locals_dict1 = await run_code(code1)
+        state = AgentState(input="test", url="")
+        output1, locals_dict1 = await run_code(code1, state)
         print(f"First Output: {output1}")
 
         # Verify first execution worked correctly
@@ -248,7 +251,7 @@ factorial_result = await call_api("calculator", "calculate_factorial", {"n": 5})
 print(f"Result 2: {factorial_result['result']}")
 '''
 
-        output2, locals_dict2 = await run_code(code2)
+        output2, locals_dict2 = await run_code(code2, state)
         print(f"Second Output: {output2}")
 
         # Verify second execution also worked correctly

@@ -8,12 +8,12 @@ from langchain_core.messages import ToolCall, BaseMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.language_models import BaseChatModel
 from cuga.backend.activity_tracker.tracker import ActivityTracker
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from mcp.client.sse import sse_client
 from mcp import ClientSession
 
 from cuga.backend.cuga_graph.nodes.shared.base_agent import BaseAgent
 from cuga.backend.cuga_graph.nodes.cuga_lite.combined_tool_provider import CombinedToolProvider
+from cuga.backend.cuga_graph.state.agent_state import AgentState
 
 from cuga.backend.llm.models import LLMManager
 from cuga.backend.llm.utils.helpers import load_prompt_chat
@@ -24,7 +24,6 @@ from loguru import logger
 
 llm_manager = LLMManager()
 tracker = ActivityTracker()
-var_manager = VariablesManager()
 
 
 @tool
@@ -195,14 +194,14 @@ class ChatAgent(BaseAgent):
         logger.error(f"Tool {tool_name} not found in available tools")
         return None
 
-    async def invoke(self, chat_messages: List[BaseMessage]):
+    async def invoke(self, chat_messages: List[BaseMessage], state: AgentState):
         """Invoke the agent with a message"""
         if not self._is_setup:
             raise RuntimeError("Agent not setup. Call setup() first.")
 
         if self.use_regular_chat:
             # Use regular run method logic
-            return await self._run_regular(chat_messages)
+            return await self._run_regular(chat_messages, state)
         else:
             # Validate session before invoking
             if not self._is_session_valid():
@@ -271,7 +270,7 @@ class ChatAgent(BaseAgent):
         logger.debug(f"Mapped chat messages: {result}")
         return result
 
-    async def _run_regular(self, chat_messages: List[BaseMessage]) -> BaseMessage:
+    async def _run_regular(self, chat_messages: List[BaseMessage], state: AgentState) -> BaseMessage:
         """Regular run method implementation"""
         if not self.chain:
             raise RuntimeError("Chain not initialized for regular mode.")
@@ -282,25 +281,25 @@ class ChatAgent(BaseAgent):
         res = await self.chain.ainvoke(
             {
                 "conversation": self.map_chat_messages(chat_messages),
-                "variables_history": var_manager.get_variables_summary(last_n=10),
+                "variables_history": state.variables_manager.get_variables_summary(last_n=10),
                 "apps_list": apps_list or "No apps available",
             }
         )
         return res
 
-    async def _run_mcp_client(self, chat_messages: List[BaseMessage]):
+    async def _run_mcp_client(self, chat_messages: List[BaseMessage], state: AgentState):
         """MCP client run method implementation"""
-        return await self.invoke(chat_messages)
+        return await self.invoke(chat_messages, state)
 
-    async def run(self, chat_messages: List[BaseMessage]) -> BaseMessage:
+    async def run(self, chat_messages: List[BaseMessage], state: AgentState) -> BaseMessage:
         """Public run method that delegates based on environment variable"""
         if not self._is_setup:
             await self.setup()
 
         if self.use_regular_chat:
-            return await self._run_regular(chat_messages)
+            return await self._run_regular(chat_messages, state)
         else:
-            return await self._run_mcp_client(chat_messages)
+            return await self._run_mcp_client(chat_messages, state)
 
     async def cleanup(self):
         """Cleanup connections"""

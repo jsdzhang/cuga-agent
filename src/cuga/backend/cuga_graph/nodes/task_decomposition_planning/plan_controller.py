@@ -8,7 +8,6 @@ from loguru import logger
 from langchain_core.runnables.config import RunnableConfig
 from cuga.backend.activity_tracker.tracker import ActivityTracker, Step
 from cuga.backend.tools_env.registry.utils.api_utils import get_apis
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.cuga_graph.nodes.shared.base_agent import create_partial
 from cuga.backend.cuga_graph.nodes.shared.base_node import BaseNode
 from cuga.backend.cuga_graph.state.agent_state import AgentState, SubTaskHistory
@@ -20,7 +19,6 @@ from cuga.backend.cuga_graph.nodes.task_decomposition_planning.plan_controller_a
 )
 
 tracker = ActivityTracker()
-var_manager = VariablesManager()
 
 
 def find_substring(string_array, target_string):

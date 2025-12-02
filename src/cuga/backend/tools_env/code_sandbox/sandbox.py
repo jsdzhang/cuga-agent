@@ -4,9 +4,9 @@ from io import StringIO
 from typing import Any
 from urllib.parse import quote
 
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.activity_tracker.tracker import ActivityTracker
 from cuga.backend.utils.id_utils import mask_with_timestamp
+from cuga.backend.cuga_graph.state.agent_state import AgentState
 
 
 import sys
@@ -19,7 +19,6 @@ import docker
 
 
 tracker = ActivityTracker()
-var_manager = VariablesManager()
 
 
 def time_timestamp():
@@ -296,7 +295,9 @@ def validate_and_clean_code(code: str) -> tuple[str, str | None]:
     return code, None
 
 
-async def run_code(code: str, _locals: dict[str, Any] = None) -> tuple[str, dict[str, Any]]:
+async def run_code(
+    code: str, state: AgentState, _locals: dict[str, Any] = None
+) -> tuple[str, dict[str, Any]]:
     """
     Run code in a sandboxed environment.
     :param lang: The language of the code.
@@ -304,7 +305,7 @@ async def run_code(code: str, _locals: dict[str, Any] = None) -> tuple[str, dict
     :param libraries: The libraries to use, it is optional.
     :return: The output of the code.
     """
-    variables = var_manager.get_variables_formatted()
+    variables = state.variables_manager.get_variables_formatted()
     python_file_dir = f"./code/{tracker.experiment_folder}/{tracker.task_id}"
     os.makedirs(python_file_dir, exist_ok=True)
     python_file_dir = os.path.join(LOGGING_DIR, python_file_dir)

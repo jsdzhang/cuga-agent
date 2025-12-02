@@ -2,7 +2,7 @@ import os
 import json
 import re
 
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
+from cuga.backend.cuga_graph.state.agent_state import VariablesManager
 
 
 def extract_preview_for(vm: VariablesManager, name: str, max_length: int = 5000) -> str:

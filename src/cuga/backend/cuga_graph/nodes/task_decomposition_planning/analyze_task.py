@@ -21,9 +21,7 @@ from langgraph.types import Command
 from loguru import logger
 from cuga.backend.tools_env.registry.utils.api_utils import get_apps, count_total_tools
 from langchain_core.messages import AIMessage
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 
-var_manager = VariablesManager()
 
 tracker = ActivityTracker()
 
@@ -172,13 +170,13 @@ class TaskAnalyzer(BaseNode):
         state: AgentState, agent: TaskAnalyzerAgent, name: str
     ) -> Command[Literal['TaskDecompositionAgent', 'CugaLite', 'FinalAnswerAgent']]:
         # if not settings.features.chat:
-        # var_manager.reset()
+        # state.variables_manager.reset()
         if await TaskAnalyzer.should_use_fast_mode_early(state):
             logger.info("Fast mode enabled - checking tool threshold")
             return Command(update=state.model_dump(), goto="CugaLite")
 
         if not settings.features.chat:
-            var_manager.reset()
+            state.variables_manager.reset()
         if not state.sender or state.sender == "ChatAgent":
             # Check fast mode early to skip LLM calls
             # Normal flow - do full task analysis

@@ -8,7 +8,6 @@ from langchain_core.language_models import BaseChatModel
 from loguru import logger
 
 from cuga.backend.activity_tracker.tracker import ActivityTracker
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.cuga_graph.nodes.shared.base_agent import BaseAgent
 from cuga.backend.cuga_graph.state.agent_state import AgentState
 
@@ -21,7 +20,6 @@ import re
 
 tracker = ActivityTracker()
 llm_manager = LLMManager()
-var_manager = VariablesManager()
 
 
 def ensure_parent_directory_exists(file_path):

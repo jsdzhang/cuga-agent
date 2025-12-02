@@ -11,12 +11,10 @@ from langchain_core.messages import AIMessage
 
 from cuga.backend.cuga_graph.state.api_planner_history import CoderAgentHistoricalOutput
 from langgraph.types import Command
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.llm.models import LLMManager
 
 from cuga.config import settings
 
-var_manager = VariablesManager()
 tracker = ActivityTracker()
 llm_manager = LLMManager()
 if settings.advanced_features.enable_fact:
@@ -46,7 +44,7 @@ class ApiCoder(BaseNode):
         res_obj = CodeAgentOutput(**json.loads(res.content))
         res_obj.steps_summary.extend([res_obj.summary])
         state.api_planner_history[-1].agent_output = CoderAgentHistoricalOutput(
-            variables_summary=var_manager.get_variables_summary(
+            variables_summary=state.variables_manager.get_variables_summary(
                 [res_obj.variables.get("variable_name")], max_length=5000
             ),
             final_output=res_obj.summary,

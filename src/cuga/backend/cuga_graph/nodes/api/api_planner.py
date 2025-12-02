@@ -4,7 +4,6 @@ from typing import Literal
 
 
 from cuga.backend.activity_tracker.tracker import ActivityTracker, Step
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
 from cuga.backend.cuga_graph.nodes.api.api_planner_agent.api_planner_agent import APIPlannerAgent
 from cuga.backend.cuga_graph.nodes.api.api_planner_agent.prompts.load_prompt import (
     APIPlannerOutput,
@@ -34,7 +33,6 @@ from cuga.backend.cuga_graph.utils.nodes_names import NodeNames, ActionIds
 
 
 instructions_manager = InstructionsManager()
-var_manager = VariablesManager()
 tracker = ActivityTracker()
 llm_manager = LLMManager()
 if settings.advanced_features.enable_fact:
@@ -206,7 +204,7 @@ class ApiPlanner(BaseNode):
                 for fact in retrieved_facts:
                     if "variable_name" in fact.content:
                         mem_dict = json.loads(fact.content)
-                        var_manager.add_variable(
+                        state.variables_manager.add_variable(
                             name=mem_dict.get("variable_name"),
                             description=mem_dict.get("description", ""),
                             value=mem_dict.get("value"),
@@ -223,7 +221,7 @@ class ApiPlanner(BaseNode):
                     "current_task": state.sub_task,
                     "agent_history": str(state.api_planner_history),
                     "shortlister_agent_output": "N/A",  # This would need to be populated from actual shortlister output
-                    "coder_agent_output": f"Variables history: {var_manager.get_variables_summary(last_n=5)}\n\nUser information ( User already logged in ): {state.pi}\n\nCurrent datetime: {tracker.current_date}",
+                    "coder_agent_output": f"Variables history: {state.variables_manager.get_variables_summary(last_n=5)}\n\nUser information ( User already logged in ): {state.pi}\n\nCurrent datetime: {tracker.current_date}",
                 }
             )
             summary = res_2.content

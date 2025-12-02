@@ -25,7 +25,7 @@ except ImportError:
         LangfuseCallbackHandler = None
 
 from cuga.backend.cuga_graph.nodes.api.code_agent.code_act_agent import create_codeact
-from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
+from cuga.backend.cuga_graph.state.agent_state import VariablesManager
 from cuga.backend.llm.models import LLMManager
 from cuga.backend.cuga_graph.nodes.cuga_lite.tool_provider_interface import (
     ToolProviderInterface,
@@ -330,7 +330,7 @@ class CugaAgent:
 
         if initial_context and not chat_messages:
             # If we have initial context but no chat history, present the variables
-            from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import VariablesManager
+            from cuga.backend.cuga_graph.state.agent_state import VariablesManager
 
             var_manager = VariablesManager()
             variable_names = list(initial_context.keys())
@@ -487,9 +487,7 @@ class CugaAgent:
                             final_context[var_name] = full_context[var_name]
 
                         # Remove newly created variables that are not being kept from var_manager
-                        from cuga.backend.cuga_graph.nodes.api.variables_manager.manager import (
-                            VariablesManager,
-                        )
+                        from cuga.backend.cuga_graph.state.agent_state import VariablesManager
 
                         var_manager = VariablesManager()
                         vars_to_remove = new_var_names[:-keep_last_n_vars]  # All except last N new vars
@@ -672,7 +670,7 @@ async def __async_main():
         var_manager = VariablesManager()
         for var_name, var_value in new_vars.items():
             # Remove old version if it exists (keep only the last one)
-            # if var_manager.remove_variable(var_name):
+            # if state.variables_manager.remove_variable(var_name):
             #     logger.debug(f"Removed previous version of variable '{var_name}' from var_manager")
             # Add to variable manager
             var_manager.add_variable(var_value, name=var_name, description="Created during code execution")
