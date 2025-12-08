@@ -220,6 +220,7 @@ CUGA supports multiple LLM providers with flexible configuration options. You ca
 - **IBM WatsonX** - IBM's enterprise LLM platform
 - **Azure OpenAI** - Microsoft's Azure OpenAI service
 - **RITS** - Internal IBM research platform
+- **OpenRouter** - LLM API gateway provider
 
 ## Configuration Priority
 
@@ -289,7 +290,7 @@ CUGA supports multiple LLM providers with flexible configuration options. You ca
     OPENAI_API_VERSION="2024-08-01-preview"
    ```
 
-### LiteLLM Support
+### Option 4: LiteLLM Support
 
 CUGA supports LiteLLM through the OpenAI configuration by overriding the base URL:
 
@@ -305,6 +306,20 @@ CUGA supports LiteLLM through the OpenAI configuration by overriding the base UR
    OPENAI_BASE_URL=https://your-litellm-endpoint.com  # Override base URL
    OPENAI_API_VERSION=2024-08-06        # Override API version
    ```
+### Option 5: OpenRouter Support
+**Setup Instructions:**
+1. Create an account at [openrouter.ai](https://openrouter.ai)
+2. Generate an API key from your account settings
+3. Add to your `.env` file:
+   ```env
+   # OpenRouter Configuration
+   OPENROUTER_API_KEY=your-openrouter-api-key
+   AGENT_SETTING_CONFIG="settings.openrouter.toml"
+   OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+    # Optional override
+   MODEL_NAME=openai/gpt-4o                    # Override model name
+    ```
+
 
 ## Configuration Files
 
@@ -313,6 +328,7 @@ CUGA uses TOML configuration files located in `src/cuga/configurations/models/`:
 - `settings.openai.toml` - OpenAI configuration (also supports LiteLLM via base URL override)
 - `settings.watsonx.toml` - WatsonX configuration
 - `settings.azure.toml` - Azure OpenAI configuration
+- `settings.openrouter.toml` - OpenRouter configuration
 
 Each file contains agent-specific model settings that can be overridden by environment variables.
 

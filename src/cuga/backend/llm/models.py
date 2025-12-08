@@ -205,6 +205,18 @@ class LLMManager:
                 default_model = "gemini-1.5-pro"
                 logger.info(f"No model_name specified for Google GenAI, using default: {default_model}")
                 return default_model
+        elif platform == "openrouter":
+            env_model_name = os.environ.get('MODEL_NAME')
+            if env_model_name:
+                logger.info(f"Using MODEL_NAME from environment for OpenRouter: {env_model_name}")
+                return env_model_name
+            elif toml_model_name:
+                logger.debug(f"Using model_name from TOML: {toml_model_name}")
+                return toml_model_name
+            else:
+                default_model = "anthropic/claude-3.5-sonnet"
+                logger.info(f"No model_name specified for OpenRouter, using default: {default_model}")
+                return default_model
         else:
             # For other platforms, use TOML or default
             if toml_model_name:
@@ -232,8 +244,9 @@ class LLMManager:
                 return toml_api_version
 
             # Default fallback
-            logger.info("No api_version specified, using default: None")
-            return None
+            default_openrouter = "https://openrouter.ai/api/v1"
+            logger.info(f"No api_version specified, using default: {default_openrouter}")
+            return default_openrouter
         else:
             # For other platforms, use TOML or default
             api_version = model_settings.get('api_version', "2024-08-06")
@@ -261,6 +274,24 @@ class LLMManager:
             # Default to None (uses OpenAI's default endpoint)
             logger.debug("No base URL specified, using OpenAI default endpoint")
             return None
+        elif platform == "openrouter":
+            env_base_url = os.environ.get('OPENROUTER_BASE_URL')
+            if env_base_url:
+                logger.info(f"Using OPENROUTER_BASE_URL from environment: {env_base_url}")
+                return env_base_url
+
+            # Check TOML settings
+            toml_url = model_settings.get('url')
+            if toml_url:
+                logger.debug(f"Using url from TOML: {toml_url}")
+                return toml_url
+
+            # Default to None (will raise error later if not set)
+            default_openrouter = "https://openrouter.ai/api/v1"
+            logger.debug(
+                f"No base URL specified for OpenRouter, will raise error if not set, falling back to: {default_openrouter}"
+            )
+            return default_openrouter
         else:
             # For other platforms, use TOML settings
             return model_settings.get('url')
@@ -361,6 +392,41 @@ class LLMManager:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+        elif platform == "openrouter":
+            # OpenRouter uses OpenAI-compatible API
+            logger.debug(f"Creating OpenRouter model: {model_name}")
+
+            # Get API key from environment
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+            if not api_key:
+                raise ValueError("OPENROUTER_API_KEY environment variable not set")
+
+            # Build OpenRouter parameters
+            openrouter_params = {
+                "model_name": model_name,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "timeout": 61,
+                "openai_api_key": api_key,
+                "openai_api_base": base_url,
+            }
+
+            # Optional: Add custom headers for OpenRouter features
+            default_headers = {}
+
+            # Add site URL and app name for OpenRouter analytics (optional)
+            site_url = model_settings.get("site_url") or os.environ.get("OPENROUTER_SITE_URL")
+            app_name = model_settings.get("app_name") or os.environ.get("OPENROUTER_APP_NAME")
+
+            if site_url:
+                default_headers["HTTP-Referer"] = site_url
+            if app_name:
+                default_headers["X-Title"] = app_name
+
+            if default_headers:
+                openrouter_params["default_headers"] = default_headers
+
+            llm = ChatOpenAI(**openrouter_params)
         else:
             raise ValueError(f"Unsupported platform: {platform}")
 
