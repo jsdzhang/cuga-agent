@@ -59,7 +59,6 @@ class LoadTest(BaseTestServerStream):
             if my_chat_messages_count == 0:
                 return False, f"User {user_id}: No chat_messages found in state"
 
-
             # For each other thread that has completed, verify they have their own variables and chat messages
             # Even if variable names are the same (they're doing the same task),
             # each thread should have its own storage

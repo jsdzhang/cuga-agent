@@ -231,6 +231,7 @@ class CugaLiteNode(BaseNode):
             state_messages=state.messages,
             chat_messages=chat_messages_to_pass,
             initial_context=initial_context,
+            thread_id=state.thread_id,  # Pass thread_id for E2B sandbox caching
         )
         logger.info(
             f"After execute: updated_chat_messages has {len(updated_chat_messages) if updated_chat_messages is not None else 'None'} messages"

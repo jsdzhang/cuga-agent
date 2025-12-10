@@ -76,7 +76,7 @@
       "request": "launch",
       "module": "fastapi",
       "envFile": "${workspaceFolder}/.env",
-      "args": ["dev", "src/cuga/backend/server/main.py", "--no-reload", "--port=8005"],
+      "args": ["dev", "src/cuga/backend/server/main.py", "--no-reload", "--port=7860"],
       "cwd": "${workspaceFolder}",
       "env": {
         "PYTHONUNBUFFERED": "1"

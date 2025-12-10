@@ -4,9 +4,14 @@ CugaAgent Base Class
 Core CUGA agent that works with different tool providers through a unified interface.
 """
 
+import ast
 import asyncio
 import contextlib
+import inspect
 import io
+import json
+import re
+import textwrap
 import time
 import types
 from typing import Any, Dict, List, Optional, Tuple
@@ -32,6 +37,16 @@ from cuga.backend.cuga_graph.nodes.cuga_lite.tool_provider_interface import (
     AppDefinition,
 )
 from cuga.config import settings
+
+# E2B sandbox imports (optional)
+try:
+    from e2b_code_interpreter import Sandbox, Execution
+
+    E2B_AVAILABLE = True
+except ImportError:
+    E2B_AVAILABLE = False
+    Sandbox = None
+    Execution = None
 
 
 class CombinedMetricsCallback(BaseCallbackHandler):
@@ -255,13 +270,21 @@ class CugaAgent:
                 elif hasattr(tool, '_run'):
                     tool.func = tool._run
 
+        # Create eval function wrapper that passes thread_id
         if self.eval_fn:
-            eval_function = self.eval_fn
+            base_eval_fn = self.eval_fn
         else:
-            eval_function = eval_with_tools_async
+            base_eval_fn = eval_with_tools_async
+
+        # Wrap eval function to pass thread_id and apps_list from instance
+        async def eval_function_with_thread(code: str, context: dict) -> tuple:
+            """Wrapper that passes thread_id and apps_list to eval function."""
+            thread_id = getattr(self, 'thread_id', None)
+            apps_list = [app.name for app in self.apps] if self.apps else None
+            return await base_eval_fn(code, context, thread_id=thread_id, apps_list=apps_list)
 
         agent_graph = create_codeact(
-            model=model, tools=self.tools, eval_fn=eval_function, prompt=custom_prompt
+            model=model, tools=self.tools, eval_fn=eval_function_with_thread, prompt=custom_prompt
         )
 
         self.agent = agent_graph.compile()
@@ -277,6 +300,7 @@ class CugaAgent:
         chat_messages: Optional[List[BaseMessage]] = None,
         initial_context: Optional[Dict[str, Any]] = None,
         keep_last_n_vars: int = 4,
+        thread_id: Optional[str] = None,
     ) -> Tuple[str, Dict[str, Any], Optional[List], Optional[List[BaseMessage]]]:
         """
         Execute a task using the CodeAct agent.
@@ -289,6 +313,7 @@ class CugaAgent:
             chat_messages: Optional chat history to include in context
             initial_context: Optional initial context/variables for CodeAct state
             keep_last_n_vars: Number of most recent variables to keep in context (default: 2)
+            thread_id: Thread ID for E2B sandbox caching (optional, for persistent sandboxes)
 
         Returns:
             Tuple of (answer, usage_metrics, state_messages, updated_chat_messages)
@@ -296,9 +321,14 @@ class CugaAgent:
         if not self.initialized:
             raise Exception("Agent not initialized. Call await agent.initialize() first")
 
+        # Store thread_id for use in eval function
+        self.thread_id = thread_id
+
         if show_progress:
             print(f"\n{'=' * 60}")
             print(f"🚀 CugaAgent executing: {task}")
+            if thread_id:
+                print(f"   Thread ID: {thread_id} (E2B sandbox will be cached)")
             print(f"{'=' * 60}")
 
         callbacks = []
@@ -312,7 +342,7 @@ class CugaAgent:
             if show_progress:
                 print("🔍 Langfuse tracing enabled")
 
-        config = {"thread_id": 1, "recursion_limit": recursion_limit, "callbacks": callbacks}
+        config = {"thread_id": thread_id or 1, "recursion_limit": recursion_limit, "callbacks": callbacks}
 
         initial_messages = []
         if chat_messages:
@@ -359,7 +389,6 @@ class CugaAgent:
 
         def extract_code_from_content(content: str) -> str:
             """Extract code from markdown code blocks in message content."""
-            import re
 
             BACKTICK_PATTERN = r"```(.*?)(?:```(?:\n|$))"
             code_blocks = re.findall(BACKTICK_PATTERN, content, re.DOTALL)
@@ -656,23 +685,322 @@ def _is_serializable(value: Any) -> bool:
     return False
 
 
-async def eval_with_tools_async(code: str, _locals: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """Execute code with async tools available in the local namespace."""
-    original_keys = set(_locals.keys())
+def _filter_new_variables(all_locals: dict[str, Any], original_keys: set[str]) -> dict[str, Any]:
+    """Filter and return only new, serializable variables from locals.
+
+    Args:
+        all_locals: Dictionary of all local variables
+        original_keys: Set of keys that existed before execution
+
+    Returns:
+        Dictionary of new serializable variables
+    """
+    new_keys = set(all_locals.keys()) - original_keys
+    new_vars = {}
+
+    for key in new_keys:
+        # Skip internal variables
+        if key.startswith('_'):
+            continue
+        value = all_locals[key]
+        if _is_serializable(value):
+            new_vars[key] = value
+        else:
+            logger.debug(f"Skipping non-serializable variable '{key}': {type(value).__name__}")
+
+    return new_vars
+
+
+def _serialize_tools_for_e2b(locals_dict: dict[str, Any], apps_list: List[str] = None) -> str:
+    """Serialize async tool functions into Python source code for E2B.
+
+    For registry tools (HTTP-based), generates stubs that call the registry API.
+    For native Python functions, extracts and includes their source code.
+
+    Args:
+        locals_dict: Dictionary containing tool functions (key=tool_name, value=tool_func)
+        apps_list: Optional list of app names to help parse tool names correctly
+
+    Returns:
+        String of Python code defining these functions
+    """
+    lines = ["# Tool functions from previous execution"]
+
+    # Sort apps by length (longest first) for better matching
+    sorted_apps = sorted(apps_list or [], key=len, reverse=True)
+
+    for tool_name, tool_func in locals_dict.items():
+        # Skip non-functions
+        if not callable(tool_func):
+            continue
+
+        # Skip internal functions
+        if tool_name.startswith('_'):
+            continue
+
+        # Only serialize async functions (tools should be async)
+        if not asyncio.iscoroutinefunction(tool_func):
+            continue
+
+        try:
+            # Try to get the source code
+            source = inspect.getsource(tool_func)
+            dedented_source = textwrap.dedent(source)
+
+            # Check if this looks like a real Python function (not a generic wrapper)
+            # Real functions have the actual function name in their definition
+            if f"def {tool_name}" in dedented_source or f"async def {tool_name}" in dedented_source:
+                # This is a real Python function with source code, use it directly
+                lines.append(dedented_source)
+            else:
+                # This is a dynamically created wrapper (registry tool)
+                # Generate a stub using the KEY from the dict as the function name
+                logger.debug(f"Tool '{tool_name}' is a registry wrapper, generating call_api stub")
+
+                # Parse tool name to extract app_name and api_name
+                # Format: {app_name}_{rest_of_name}
+                # Try to match against known app names (sorted by length, longest first)
+                app_name_guess = "unknown"
+                for app in sorted_apps:
+                    if tool_name.startswith(app + '_'):
+                        app_name_guess = app
+                        break
+
+                # If no match found, fall back to splitting
+                if app_name_guess == "unknown":
+                    parts = tool_name.split('_', 1)
+                    if len(parts) >= 2:
+                        app_name_guess = parts[0]
+
+                api_name_guess = tool_name
+
+                # Generate stub function using **kwargs to match any call signature
+                stub = f"""async def {tool_name}(**kwargs):
+    \"\"\"Registry tool: {tool_name}\"\"\"
+    # This stub was auto-generated for registry tool
+    # Calls the registry API via call_api helper (synchronous)
+    return await call_api("{app_name_guess}", "{api_name_guess}", kwargs)
+"""
+                lines.append(stub)
+
+        except (OSError, TypeError) as e:
+            # Can't get source (likely a built-in or C function)
+            logger.debug(f"Could not get source for tool '{tool_name}': {e}")
+            # Generate a minimal stub as fallback
+            stub = f"""async def {tool_name}(*args, **kwargs):
+    \"\"\"Tool stub for {tool_name}\"\"\"
+    return await call_api("unknown", "{tool_name}", kwargs)
+"""
+            lines.append(stub)
+            continue
+
+    return "\n".join(lines) + "\n\n" if len(lines) > 1 else ""
+
+
+global_sandbox_id = None
+
+
+async def _execute_in_e2b_sandbox(
+    user_code: str, context_locals: dict[str, Any] = None, thread_id: str = None, apps_list: List[str] = None
+) -> tuple[str, dict[str, Any]]:
+    """Execute code in E2B remote sandbox with variables and tools from context (async).
+
+    Args:
+        user_code: User's Python code (already wrapped in async function)
+        context_locals: Dictionary of variables and tools from previous execution
+        thread_id: Thread ID for sandbox caching (if None, creates ephemeral sandbox)
+        apps_list: List of app names for parsing tool names correctly
+
+    Returns:
+        Tuple of (stdout_result, parsed_locals)
+
+    Raises:
+        RuntimeError: If E2B execution or parsing fails
+    """
+    global global_sandbox_id
+
+    if not E2B_AVAILABLE:
+        raise RuntimeError("e2b-code-interpreter package not installed")
+
+    if context_locals is None:
+        context_locals = {}
 
     try:
-        with contextlib.redirect_stdout(io.StringIO()) as f:
-            # Wrap the generated code in an async function and execute it
-            # This allows the LLM to generate code with await statements
-            # Indent the code properly - all lines including empty ones need to be indented
-            indented_code = '\n'.join('    ' + line for line in code.split('\n'))
-            # Check if the last line is just a variable reference and add print statement if needed
-            lines = [line.strip() for line in code.split('\n') if line.strip()]
-            if lines and not lines[-1].startswith(('print', 'return', '#')) and '=' not in lines[-1]:
-                # Last line looks like a variable reference, add a print statement
-                indented_code += f"\n    print({lines[-1]})"
+        # Serialize variables (non-callable values)
+        var_manager = VariablesManager()
+        variables_code = var_manager.get_variables_formatted()
 
-            wrapped_code = f"""
+        # Serialize tool functions (callable async functions)
+        tools_code = _serialize_tools_for_e2b(context_locals, apps_list=apps_list)
+
+        # Get function_call_host for E2B (needs publicly accessible URL)
+        # Fallback: function_call_host -> registry_host -> "http://localhost:8001"
+        function_call_url = getattr(settings.server_ports, 'function_call_host', None)
+        if not function_call_url:
+            function_call_url = getattr(settings.server_ports, 'registry_host', None)
+        if not function_call_url:
+            function_call_url = "http://localhost:8001"
+
+        # Add call_api helper for registry tools (HTTP client)
+        # Note: Using regular string with .format() to avoid f-string escaping issues
+        call_api_helper = """
+# HTTP client for calling registry tools
+import asyncio
+import json
+import urllib.request
+import urllib.error
+
+async def call_api(app_name, api_name, args=None):
+    \"\"\"Call registry API tool via HTTP (synchronous).\"\"\"
+    if args is None:
+        args = {{}}
+
+    # Registry URL from CUGA settings
+    url = "{registry_url}/functions/call"
+
+    headers = {{
+        "accept": "application/json",
+        "Content-Type": "application/json"
+    }}
+    payload = {{
+        "function_name": api_name,
+        "app_name": app_name,
+        "args": args
+    }}
+
+    data = json.dumps(payload).encode('utf-8')
+    req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+
+    loop = asyncio.get_event_loop()
+
+    def _sync_call():
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                response_data = response.read().decode('utf-8')
+                try:
+                    response_data = json.loads(response_data)
+                except Exception as e:
+                    pass
+                return response_data
+        except urllib.error.HTTPError as e:
+            print(e)
+            raise Exception(f"HTTP Error: {{e.code}} - {{e.reason}}")
+        except urllib.error.URLError as e:
+            print(e)
+            raise Exception(f"URL Error: {{e.reason}}")
+    
+    return await loop.run_in_executor(None, _sync_call)
+""".format(registry_url=function_call_url)
+
+        # Combine: imports + call_api + tools + variables + user code
+        complete_code = f"""
+{call_api_helper}
+{tools_code}
+{variables_code}
+{user_code}
+
+# Execute and capture locals
+async def main():
+    __result_locals = await asyncio.wait_for(__async_main(), timeout=30)
+    print("!!!===!!!")
+    print(__result_locals)
+
+if __name__ == "__main__":
+    await main()
+"""
+
+        logger.debug(f"Executing in E2B with {var_manager.get_variable_count()} variables and tools")
+
+        # Debug: Print the complete code being sent to E2B
+        print("=" * 80)
+        print("CODE SENT TO E2B SANDBOX:")
+        print("=" * 80)
+        print(complete_code)
+        print("=" * 80)
+
+        # Get or create sandbox based on thread_id
+        loop = asyncio.get_event_loop()
+        if settings.advanced_features.e2b_sandbox_mode == "per-session" and thread_id:
+            # Use cached sandbox for this thread
+            from cuga.backend.cuga_graph.nodes.cuga_lite.e2b_sandbox_cache import get_sandbox_cache
+
+            cache = get_sandbox_cache()
+            sandbox = cache.get_or_create(thread_id)
+            logger.debug(f"Executing in E2B sandbox {sandbox.sandbox_id} for thread {thread_id}")
+            execution = await loop.run_in_executor(None, sandbox.run_code, complete_code)
+        elif settings.advanced_features.e2b_sandbox_mode == "single":
+            if (
+                global_sandbox_id is None
+                or (sandbox := Sandbox.connect(global_sandbox_id))
+                and not sandbox.is_running
+            ):
+                logger.debug("Creating new global E2B sandbox")
+                sandbox = Sandbox.create("cuga-langchain")
+                global_sandbox_id = sandbox.sandbox_id
+            logger.debug(f"Executing in global E2B sandbox {sandbox.sandbox_id}")
+            execution = await loop.run_in_executor(None, sandbox.run_code, complete_code)
+        else:
+            # Create ephemeral sandbox (no caching)
+            logger.debug("Creating new ephemeral E2B sandbox")
+            with Sandbox.create("cuga-langchain") as sandbox:
+                logger.debug("Creating new ephemeral E2B sandbox")
+                execution = await loop.run_in_executor(None, sandbox.run_code, complete_code)
+
+        # Check for execution errors
+        if execution.error:
+            raise RuntimeError(f"E2B execution error: {execution.error}")
+
+        # Process stdout
+        stdout_lines = execution.logs.stdout
+        raw_data = "\n".join(map(str.strip, stdout_lines))
+        result, locals_str = raw_data.split("!!!===!!!")
+
+        # Parse locals from stdout (last line with the dict)
+        result_locals = {}
+        lines = locals_str.split('\n')
+        for line in reversed(lines):
+            if line.strip().startswith('{'):
+                try:
+                    result_locals = ast.literal_eval(line.strip())
+                    break
+                except (ValueError, SyntaxError):
+                    continue
+
+        if not result_locals:
+            logger.warning("E2B execution returned no parseable locals")
+
+        return result, result_locals
+
+    except Exception as e:
+        raise RuntimeError(f"E2B sandbox execution failed: {e}")
+
+
+async def eval_with_tools_async(
+    code: str, _locals: dict[str, Any], thread_id: str = None, apps_list: List[str] = None
+) -> tuple[str, dict[str, Any]]:
+    """Execute code with async tools available in the local namespace.
+
+    Args:
+        code: Python code to execute
+        _locals: Local variables/context for execution
+        thread_id: Thread ID for E2B sandbox caching (optional)
+        apps_list: List of app names for parsing tool names correctly (optional)
+
+    Returns:
+        Tuple of (execution result, new variables dictionary)
+    """
+
+    original_keys = set(_locals.keys())
+    result = ""
+
+    # Prepare wrapped code for execution
+    indented_code = '\n'.join('    ' + line for line in code.split('\n'))
+    lines = [line.strip() for line in code.split('\n') if line.strip()]
+    if lines and not lines[-1].startswith(('print', 'return', '#')) and '=' not in lines[-1]:
+        # Last line looks like a variable reference, add a print statement
+        indented_code += f"\n    print({lines[-1]})"
+
+    wrapped_code = f"""
 import asyncio
 async def __async_main():
 {indented_code}
@@ -680,17 +1008,25 @@ async def __async_main():
 
 # Execute the wrapped function
 """
-            # Create a proper global namespace with builtins and tool functions
+
+    try:
+        # Execute in E2B sandbox if enabled
+        if settings.advanced_features.e2b_sandbox:
+            result, parsed_locals = await _execute_in_e2b_sandbox(
+                wrapped_code, context_locals=_locals, thread_id=thread_id, apps_list=apps_list
+            )
+            _locals.update(parsed_locals)
+            new_vars = _filter_new_variables(_locals, original_keys)
+            return result, new_vars
+
+        # Local execution
+        with contextlib.redirect_stdout(io.StringIO()) as f:
             globals_dict = {"__builtins__": __builtins__, **_locals}
             exec(wrapped_code, globals_dict, _locals)
 
             # Get and run the async function
             async_main = _locals['__async_main']
-
-            # Add timeout to prevent hanging
             result_locals = await asyncio.wait_for(async_main(), timeout=30)
-
-            # Merge results back
             _locals.update(result_locals)
 
         result = f.getvalue()
@@ -705,19 +1041,8 @@ async def __async_main():
 
         result += f"\n{traceback.format_exc()}"
 
-    new_keys = set(_locals.keys()) - original_keys
-
-    # Filter out non-serializable values to avoid msgpack serialization errors
-    new_vars = {}
-    for key in new_keys:
-        # Skip internal variables
-        if key.startswith('_'):
-            continue
-        value = _locals[key]
-        if _is_serializable(value):
-            new_vars[key] = value
-        else:
-            logger.debug(f"Skipping non-serializable variable '{key}': {type(value).__name__}")
+    # Filter new variables
+    new_vars = _filter_new_variables(_locals, original_keys)
 
     # Add new variables to VariablesManager and get their preview
     if new_vars:
@@ -761,7 +1086,6 @@ def create_mcp_prompt(
         apps: Optional list of connected apps with their descriptions
         task_loaded_from_file: If True, indicates that the task was loaded from a file
     """
-    import json
     from cuga.backend.llm.utils.helpers import load_one_prompt
 
     processed_tools = []
