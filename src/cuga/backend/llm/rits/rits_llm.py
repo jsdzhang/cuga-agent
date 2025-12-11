@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-import requests
+import httpx
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
 from langchain_core.utils import pre_init
@@ -103,11 +103,12 @@ class RITS(LLM):
             **self._default_params,
             **kwargs,
         }
-        response = requests.post(
-            url=f"{self.rits_base_url}/v1/completions",
-            headers={"RITS_API_KEY": self.rits_api_key},
-            json={"prompt": prompt, "stop": stop, "model": self.model_name, **params},
-        )
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(
+                url=f"{self.rits_base_url}/v1/completions",
+                headers={"RITS_API_KEY": self.rits_api_key},
+                json={"prompt": prompt, "stop": stop, "model": self.model_name, **params},
+            )
 
         if response.status_code != 200:
             raise ValueError(f"Failed to call RITS: {response.text} with status code {response.status_code}")

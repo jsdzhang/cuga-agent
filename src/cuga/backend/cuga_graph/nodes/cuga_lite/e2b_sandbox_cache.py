@@ -16,6 +16,8 @@ except ImportError:
     E2B_AVAILABLE = False
     Sandbox = None
 
+from cuga.config import settings
+
 
 class SandboxCacheEntry:
     """Entry in the sandbox cache containing sandbox instance and metadata."""
@@ -108,6 +110,23 @@ class E2BSandboxCache:
         if not E2B_AVAILABLE:
             raise RuntimeError("e2b-code-interpreter package not installed")
 
+        sandbox_mode = settings.advanced_features.e2b_sandbox_mode
+
+        # If mode is "single" or "per-call", create new instance without caching
+        if sandbox_mode in ("single", "per-call"):
+            logger.info(
+                f"Creating new E2B sandbox (mode: {sandbox_mode}) for thread {thread_id} "
+                f"with template '{self._template_name}'"
+            )
+            try:
+                sandbox = Sandbox.create(self._template_name)
+                logger.info(f"Successfully created sandbox for thread {thread_id} (mode: {sandbox_mode})")
+                return sandbox
+            except Exception as e:
+                logger.error(f"Failed to create E2B sandbox for thread {thread_id}: {e}")
+                raise RuntimeError(f"Failed to create E2B sandbox: {e}") from e
+
+        # Per-session mode: use caching logic
         # Clean up expired/dead sandboxes before proceeding
         self._cleanup_expired()
 

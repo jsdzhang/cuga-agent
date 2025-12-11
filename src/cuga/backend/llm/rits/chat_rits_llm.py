@@ -1,6 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
-import requests
+import httpx
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -197,16 +197,17 @@ class ChatRITS(BaseChatModel):
 
         messages = self._convert_messages_to_dicts(messages)
 
-        response = requests.post(
-            url=f"{self.rits_base_url}/v1/chat/completions",
-            headers={"RITS_API_KEY": self.rits_api_key},
-            json={
-                "messages": messages,
-                "stop": stop,
-                "model": self.model_name,
-                **params,
-            },
-        )
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(
+                url=f"{self.rits_base_url}/v1/chat/completions",
+                headers={"RITS_API_KEY": self.rits_api_key},
+                json={
+                    "messages": messages,
+                    "stop": stop,
+                    "model": self.model_name,
+                    **params,
+                },
+            )
 
         if response.status_code != 200:
             raise ValueError(f"Failed to call RITS: {response.text} with status code {response.status_code}")

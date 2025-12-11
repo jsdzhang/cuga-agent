@@ -7,3 +7,5 @@ mcpServers:
     url: http://localhost:8112/sse
     description: Standard file system operations for workspace management
 
+
+

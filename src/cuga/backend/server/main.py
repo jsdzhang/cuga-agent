@@ -40,6 +40,7 @@ from cuga.backend.cuga_graph.state.agent_state import AgentState, default_state
 from cuga.backend.browser_env.browser.gym_env_async import BrowserEnvGymAsync
 from cuga.backend.browser_env.browser.open_ended_async import OpenEndedTaskAsync
 from cuga.backend.cuga_graph.utils.agent_loop import AgentLoop, AgentLoopAnswer, StreamEvent, OutputFormat
+from cuga.backend.tools_env.registry.utils.api_utils import get_registry_base_url
 from cuga.config import (
     get_app_name_from_url,
     get_user_data_path,
@@ -827,9 +828,14 @@ async def get_tools_config():
     )
     try:
         if os.path.exists(config_path):
-            with open(config_path, "r") as f:
-                config_data = yaml.safe_load(f)
-                return JSONResponse(config_data)
+            loop = asyncio.get_event_loop()
+
+            def _read_file():
+                with open(config_path, "r") as f:
+                    return yaml.safe_load(f)
+
+            config_data = await loop.run_in_executor(None, _read_file)
+            return JSONResponse(config_data)
         else:
             return JSONResponse({"services": [], "mcpServers": {}})
     except Exception as e:
@@ -845,8 +851,13 @@ async def save_tools_config(request: Request):
     )
     try:
         data = await request.json()
-        with open(config_path, "w") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        loop = asyncio.get_event_loop()
+
+        def _write_file():
+            with open(config_path, "w") as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+        await loop.run_in_executor(None, _write_file)
         logger.info(f"Tools configuration saved to {config_path}")
         return JSONResponse({"status": "success", "message": "Tools configuration saved successfully"})
     except Exception as e:
@@ -1033,33 +1044,22 @@ async def get_tools_status():
 
 @app.post("/api/config/mode")
 async def save_mode_config(request: Request):
-    """Endpoint to save execution mode (fast/balanced) and update agent state lite_mode."""
+    """Endpoint to save execution mode (fast/balanced) and update agent state lite_mode.
+    Note: Mode switching is disabled in hosted environments."""
     try:
         data = await request.json()
         mode = data.get("mode", "balanced")
-        thread_id = request.headers.get("X-Thread-ID")
-        if not thread_id:
-            thread_id = data.get("thread_id")
 
-        # Determine lite_mode value based on mode
-        lite_mode = True if mode == "fast" else False
-
-        # Update agent state if thread_id is provided
-        if thread_id and app_state.agent and app_state.agent.graph:
-            try:
-                state_snapshot = app_state.agent.graph.get_state({"configurable": {"thread_id": thread_id}})
-                if state_snapshot and state_snapshot.values:
-                    local_state = AgentState(**state_snapshot.values)
-                    local_state.lite_mode = lite_mode
-                    app_state.agent.graph.update_state(
-                        {"configurable": {"thread_id": thread_id}}, local_state.model_dump()
-                    )
-                    logger.info(f"Updated agent state lite_mode to {lite_mode} for thread {thread_id}")
-            except Exception as e:
-                logger.warning(f"Could not update agent state for thread {thread_id}: {e}")
-
-        logger.info(f"Execution mode changed to: {mode} (lite_mode={lite_mode})")
-        return JSONResponse({"status": "success", "mode": mode, "lite_mode": lite_mode})
+        # Mode switching disabled - return success without making changes
+        logger.info(f"Mode change request received but disabled: {mode}")
+        return JSONResponse(
+            {
+                "status": "success",
+                "mode": "balanced",
+                "lite_mode": False,
+                "message": "Mode switching is disabled. Clone the repo locally to use this feature.",
+            }
+        )
     except Exception as e:
         logger.error(f"Failed to save mode: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save mode: {str(e)}")
@@ -1266,8 +1266,13 @@ async def get_workspace_file(path: str):
 
         # Read file content
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            loop = asyncio.get_event_loop()
+
+            def _read_file():
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+
+            content = await loop.run_in_executor(None, _read_file)
         except UnicodeDecodeError:
             raise HTTPException(status_code=415, detail="File is not a text file")
 
@@ -1398,14 +1403,15 @@ async def proxy_function_call(request: Request):
     Exposes the registry's /functions/call endpoint through the main HuggingFace Space URL.
     """
     try:
-        from cuga.backend.tools_env.registry.utils.api_utils import get_registry_base_url
-
-        registry_base = get_registry_base_url()
-        registry_url = f"{registry_base}/functions/call"
+        registry_url = f"{get_registry_base_url()}/functions/call"
 
         body = await request.body()
         headers = dict(request.headers)
+
+        host = headers.get('host')
+
         headers.pop('host', None)
+        logger.info(f"Function call request host: {host}")
 
         trajectory_path = request.query_params.get('trajectory_path')
         params = {}
@@ -1415,12 +1421,16 @@ async def proxy_function_call(request: Request):
         async with httpx.AsyncClient(timeout=600.0) as client:
             response = await client.post(registry_url, content=body, headers=headers, params=params)
 
+            response_headers = dict(response.headers)
+            response_headers.pop('content-length', None)
+            response_headers.pop('transfer-encoding', None)
+
             return JSONResponse(
                 content=response.json()
                 if response.headers.get('content-type', '').startswith('application/json')
                 else response.text,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=response_headers,
             )
     except httpx.RequestError as e:
         logger.error(f"Error connecting to registry server: {e}")

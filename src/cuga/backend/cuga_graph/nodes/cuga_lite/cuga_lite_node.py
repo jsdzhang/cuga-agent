@@ -16,7 +16,7 @@ from cuga.backend.cuga_graph.nodes.api.api_planner_agent.prompts.load_prompt imp
 from cuga.backend.cuga_graph.state.api_planner_history import CoderAgentHistoricalOutput
 from cuga.config import settings
 from langchain_core.messages import AIMessage
-
+from cuga.backend.llm.utils.helpers import load_one_prompt
 
 try:
     from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
@@ -59,9 +59,10 @@ class CugaLiteOutput(BaseModel):
 class CugaLiteNode(BaseNode):
     """Node wrapper for CugaAgent - fast execution mode."""
 
-    def __init__(self, langfuse_handler: Optional[Any] = None):
+    def __init__(self, langfuse_handler: Optional[Any] = None, prompt_template: Optional[str] = None):
         super().__init__()
         self.name = "CugaLite"
+        self.prompt_template = load_one_prompt('prompts/mcp_prompt.jinja2')
         self.langfuse_handler = langfuse_handler
 
     @staticmethod
@@ -117,6 +118,7 @@ class CugaLiteNode(BaseNode):
             langfuse_handler=langfuse_handler,
             instructions=get_all_instructions_formatted(),
             task_loaded_from_file=task_loaded_from_file,
+            prompt_template=self.prompt_template,
         )
         await agent.initialize()
         logger.info(f"CugaLite agent initialized with {len(agent.tools)} tools")
@@ -164,6 +166,7 @@ class CugaLiteNode(BaseNode):
                 file_content = await self.read_text_file(task_input_stripped)
                 if file_content:
                     task_input = file_content
+                    task_input += "\n\nDo not use cuga_kowledge.md for the above task."
                     task_loaded_from_file = True
                     logger.info(f"Replaced task input with file content from {task_input_stripped}")
                 else:

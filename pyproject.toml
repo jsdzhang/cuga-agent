@@ -11,6 +11,7 @@ dependencies = [
     "langchain-openai",
     "langchain-core",
     "aiohttp",
+    "httpx",
     "docker",
     "langgraph",
     "html2text",

@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional
-
+from langchain_core.prompts import PromptTemplate
 from cuga.backend.cuga_graph.nodes.cuga_lite.cuga_agent_base import CugaAgent as BaseCugaAgent
 from cuga.backend.cuga_graph.nodes.cuga_lite.combined_tool_provider import CombinedToolProvider
 
@@ -38,6 +38,7 @@ class CugaAgent(BaseCugaAgent):
         langfuse_handler: Optional[Any] = None,
         instructions: Optional[str] = None,
         task_loaded_from_file: bool = False,
+        prompt_template: Optional[PromptTemplate] = None,
     ):
         """Initialize CugaAgent.
 
@@ -55,6 +56,7 @@ class CugaAgent(BaseCugaAgent):
             langfuse_handler=langfuse_handler,
             instructions=instructions,
             task_loaded_from_file=task_loaded_from_file,
+            prompt_template=prompt_template,
         )
         self.app_names = app_names
 

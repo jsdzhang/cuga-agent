@@ -1,4 +1,4 @@
-import requests
+import httpx
 from typing import Dict, Any, List
 import json
 import aiohttp
@@ -97,15 +97,16 @@ class MCPManager:
         raise RuntimeError("No free port found in safe range.")
 
     @staticmethod
-    def _fetch_and_parse_schema(url_or_path):
+    async def _fetch_and_parse_schema(url_or_path):
         parsed = urlparse(url_or_path)
         is_url = parsed.scheme in ('http', 'https')
         if is_url:
             # Handle HTTP/HTTPS URLs
-            r = requests.get(url_or_path.split('&')[0])
-            r.raise_for_status()
-            ct = r.headers.get("Content-Type", "").lower()
-            raw = r.text
+            async with httpx.AsyncClient() as client:
+                r = await client.get(url_or_path.split('&')[0])
+                r.raise_for_status()
+                ct = r.headers.get("Content-Type", "").lower()
+                raw = r.text
         else:
             # Handle local file paths
             if os.path.isabs(url_or_path):
@@ -415,7 +416,9 @@ class MCPManager:
         return {"success": trm_output_schema, "failure": {"error": "string"}}
 
     async def _get_trm_tools(self, app_name: str, url: str, app_tools: List[str], auth: Auth):
-        tools = (requests.get(url + '/api/v1/tools/', headers={auth.type: auth.value})).json()
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url + '/api/v1/tools/', headers={auth.type: auth.value})
+            tools = response.json()
         for tool in tools:
             if tool['name'] in app_tools:
                 self.trm_tools[app_name + '_' + tool['name']] = {
@@ -435,8 +438,8 @@ class MCPManager:
             auth = self.auth_config[trm_tool.split("_")[0]]
             tool = self.trm_tools[trm_tool]
             tool_type = next(iter(tool['binding']))
-            response = (
-                requests.post(
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
                     LOCAL_TRM_URL + f"/api/v1/runtime/tools/{tool['id']}/run?tool_type={tool_type}",
                     json={
                         "args": args,
@@ -445,8 +448,8 @@ class MCPManager:
                     },
                     headers={auth.type: auth.value},
                 )
-            ).json()
-            return [TextContent(text=response['data']['tool_output'], type='text')]
+                response_json = response.json()
+            return [TextContent(text=response_json['data']['tool_output'], type='text')]
 
         server = self.server_by_tool.get(tool_name)
         if not args:
@@ -911,7 +914,7 @@ class MCPManager:
     async def initialize_servers(self, services: List[Service]):
         for name, config in services:
             try:
-                schema_data, parser, is_url = self._fetch_and_parse_schema(config.url)
+                schema_data, parser, is_url = await self._fetch_and_parse_schema(config.url)
                 if not is_url:
                     # this is a path
                     config.url = schema_data['servers'][0]['url']

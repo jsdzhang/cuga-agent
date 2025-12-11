@@ -20,6 +20,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.callbacks.usage import UsageMetadataCallbackHandler
 from langchain_core.tools import StructuredTool
 from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
+from langchain_core.prompts import PromptTemplate
 
 try:
     from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
@@ -183,7 +184,7 @@ class CugaAgent:
         model_settings: Optional[Dict] = None,
         langfuse_handler: Optional[Any] = None,
         eval_fn: Optional[Any] = None,
-        prompt_template: Optional[str] = None,
+        prompt_template: Optional[PromptTemplate] = None,
         allow_user_clarification: bool = True,
         override_return_to_user_cases: Optional[List[str]] = None,
         instructions: Optional[str] = None,
@@ -208,12 +209,11 @@ class CugaAgent:
         self.model_settings = model_settings
         self.langfuse_handler = langfuse_handler
         self.eval_fn = eval_fn
-        self.prompt_template = prompt_template
         self.allow_user_clarification = allow_user_clarification
         self.override_return_to_user_cases = override_return_to_user_cases
         self.instructions = instructions
         self.task_loaded_from_file = task_loaded_from_file
-
+        self.prompt_template = prompt_template
         self.apps: List[AppDefinition] = []
         self.tools: List[StructuredTool] = []
         self.agent = None
@@ -250,17 +250,15 @@ class CugaAgent:
         model = llm_manager.get_model(model_config)
         logger.info(f"Initialized LLM: {type(model).__name__}")
 
-        if self.prompt_template:
-            custom_prompt = self.prompt_template
-        else:
-            custom_prompt = create_mcp_prompt(
-                self.tools,
-                allow_user_clarification=self.allow_user_clarification,
-                return_to_user_cases=self.override_return_to_user_cases,
-                instructions=self.instructions,
-                apps=self.apps,
-                task_loaded_from_file=self.task_loaded_from_file,
-            )
+        custom_prompt = create_mcp_prompt(
+            self.tools,
+            allow_user_clarification=self.allow_user_clarification,
+            return_to_user_cases=self.override_return_to_user_cases,
+            instructions=self.instructions,
+            apps=self.apps,
+            task_loaded_from_file=self.task_loaded_from_file,
+            prompt_template=self.prompt_template,
+        )
 
         for tool in self.tools:
             if not hasattr(tool, 'func'):
@@ -993,6 +991,50 @@ async def eval_with_tools_async(
     original_keys = set(_locals.keys())
     result = ""
 
+    # Pre-execution security validation: Scan for dangerous imports
+    dangerous_imports = {'os', 'sys', 'subprocess', 'pathlib', 'shutil', 'glob', 'importlib'}
+    allowed_imports = {
+        'asyncio',
+        'json',
+        'pandas',
+        'numpy',
+        'datetime',
+        'math',
+        'collections',
+        'itertools',
+        'functools',
+        're',
+        'typing',
+    }
+
+    try:
+        tree = ast.parse(code)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    module_name = alias.name.split('.')[0]
+                    if module_name in dangerous_imports:
+                        raise ImportError(
+                            f"Import of '{module_name}' is not allowed in restricted execution context"
+                        )
+                    if module_name not in allowed_imports:
+                        raise ImportError(
+                            f"Import of '{module_name}' is not allowed in restricted execution context"
+                        )
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    module_name = node.module.split('.')[0]
+                    if module_name in dangerous_imports:
+                        raise ImportError(
+                            f"Import from '{module_name}' is not allowed in restricted execution context"
+                        )
+                    if module_name not in allowed_imports:
+                        raise ImportError(
+                            f"Import from '{module_name}' is not allowed in restricted execution context"
+                        )
+    except SyntaxError as e:
+        logger.warning(f"Syntax error in code during pre-validation: {e}. Will attempt execution anyway.")
+
     # Prepare wrapped code for execution
     indented_code = '\n'.join('    ' + line for line in code.split('\n'))
     lines = [line.strip() for line in code.split('\n') if line.strip()]
@@ -1009,6 +1051,17 @@ async def __async_main():
 # Execute the wrapped function
 """
 
+    # Additional validation: Scan wrapped_code for any dangerous imports
+    # (defense in depth - should never trigger since we control the template)
+    for dangerous_module in ['os', 'sys', 'subprocess', 'pathlib', 'shutil']:
+        # Check for both "import os" and "from os import"
+        if re.search(rf'\bimport\s+{dangerous_module}\b', wrapped_code) or re.search(
+            rf'\bfrom\s+{dangerous_module}\b', wrapped_code
+        ):
+            raise PermissionError(
+                f"Security violation: Dangerous module '{dangerous_module}' detected in wrapped code"
+            )
+
     try:
         # Execute in E2B sandbox if enabled
         if settings.advanced_features.e2b_sandbox:
@@ -1019,13 +1072,159 @@ async def __async_main():
             new_vars = _filter_new_variables(_locals, original_keys)
             return result, new_vars
 
-        # Local execution
+        # Local execution with restricted environment
         with contextlib.redirect_stdout(io.StringIO()) as f:
-            globals_dict = {"__builtins__": __builtins__, **_locals}
-            exec(wrapped_code, globals_dict, _locals)
+            # Create a restricted __import__ that only allows whitelisted modules
+            _original_import = (
+                __builtins__['__import__'] if isinstance(__builtins__, dict) else __builtins__.__import__
+            )
 
-            # Get and run the async function
-            async_main = _locals['__async_main']
+            def restricted_import(name, globals=None, locals=_locals, fromlist=(), level=0):
+                # Whitelist of allowed modules
+                allowed_modules = {
+                    'asyncio',
+                    'json',
+                    'pandas',
+                    'numpy',
+                    'datetime',
+                    'math',
+                    'collections',
+                    'itertools',
+                    'functools',
+                    're',
+                    'typing',
+                }
+
+                # Block access to dangerous modules
+                if name.split('.')[0] not in allowed_modules:
+                    raise ImportError(f"Import of '{name}' is not allowed in restricted execution context")
+
+                return _original_import(name, globals, locals, fromlist, level)
+
+            # Create restricted builtins - allow only safe operations
+            # Exclude: compile, eval, exec, open, input, file operations
+            safe_builtins = {
+                # Type constructors
+                'dict': dict,
+                'list': list,
+                'tuple': tuple,
+                'set': set,
+                'frozenset': frozenset,
+                'str': str,
+                'bytes': bytes,
+                'bytearray': bytearray,
+                'int': int,
+                'float': float,
+                'bool': bool,
+                'complex': complex,
+                # Utilities
+                'len': len,
+                'range': range,
+                'enumerate': enumerate,
+                'zip': zip,
+                'map': map,
+                'filter': filter,
+                'sorted': sorted,
+                'reversed': reversed,
+                'sum': sum,
+                'min': min,
+                'max': max,
+                'abs': abs,
+                'round': round,
+                'any': any,
+                'all': all,
+                # String operations
+                'chr': chr,
+                'ord': ord,
+                'format': format,
+                'repr': repr,
+                # Type checking
+                'isinstance': isinstance,
+                'issubclass': issubclass,
+                'type': type,
+                'hasattr': hasattr,
+                'getattr': getattr,
+                'setattr': setattr,
+                'delattr': delattr,
+                # Iteration
+                'iter': iter,
+                'next': next,
+                'slice': slice,
+                # Exceptions (needed for error handling)
+                'BaseException': BaseException,
+                'Exception': Exception,
+                'ValueError': ValueError,
+                'TypeError': TypeError,
+                'KeyError': KeyError,
+                'IndexError': IndexError,
+                'AttributeError': AttributeError,
+                'RuntimeError': RuntimeError,
+                'StopIteration': StopIteration,
+                'AssertionError': AssertionError,
+                'ImportError': ImportError,
+                # Other essentials
+                'print': print,
+                'None': None,
+                'True': True,
+                'False': False,
+                'locals': locals,
+                'vars': vars,  # Variable introspection
+                '__name__': '__restricted__',
+                '__build_class__': __build_class__,
+                '__import__': restricted_import,  # Restricted import
+            }
+
+            # Create restricted globals with limited module access
+            # os, sys, subprocess, and other dangerous modules are completely excluded
+            restricted_globals = {
+                "__builtins__": safe_builtins,
+                "asyncio": asyncio,  # Needed for async execution
+                "json": json,  # Commonly needed for tool calls
+            }
+
+            # Add pandas if available
+            try:
+                import pandas as pd
+
+                restricted_globals["pd"] = pd
+                restricted_globals["pandas"] = pd
+            except ImportError:
+                pass  # pandas not installed, skip
+
+            # Add tool functions from _locals (these are the callable tools)
+            # Filter out any dangerous modules that might have been passed in _locals
+            dangerous_module_names = {
+                'os',
+                'sys',
+                'subprocess',
+                'pathlib',
+                'shutil',
+                'glob',
+                'importlib',
+                '__import__',
+                'eval',
+                'exec',
+                'compile',
+            }
+            safe_locals = {k: v for k, v in _locals.items() if k not in dangerous_module_names}
+
+            # Merge tools and variables into restricted_globals so they're accessible
+            # to the async function when it runs
+            restricted_globals.update(safe_locals)
+
+            # Safety check: Ensure no dangerous modules leaked into the execution environment
+            assert 'os' not in restricted_globals, "Security violation: os module in restricted_globals!"
+            assert 'sys' not in restricted_globals, "Security violation: sys module in restricted_globals!"
+            assert 'subprocess' not in restricted_globals, (
+                "Security violation: subprocess in restricted_globals!"
+            )
+
+            # Create a namespace for exec to populate with local definitions
+            exec_locals = {}
+            exec(wrapped_code, restricted_globals, exec_locals)
+
+            # Get and run the async function (it's now in exec_locals)
+            async_main = exec_locals['__async_main']
             result_locals = await asyncio.wait_for(async_main(), timeout=30)
             _locals.update(result_locals)
 
@@ -1073,6 +1272,7 @@ def create_mcp_prompt(
     instructions=None,
     apps=None,
     task_loaded_from_file=False,
+    prompt_template=None,
 ):
     """Create a prompt for CodeAct agent that works with MCP tools.
 
@@ -1086,8 +1286,6 @@ def create_mcp_prompt(
         apps: Optional list of connected apps with their descriptions
         task_loaded_from_file: If True, indicates that the task was loaded from a file
     """
-    from cuga.backend.llm.utils.helpers import load_one_prompt
-
     processed_tools = []
     for tool in tools:
         tool_name = tool.name if hasattr(tool, 'name') else str(tool)
@@ -1205,7 +1403,6 @@ def create_mcp_prompt(
                 }
             )
 
-    prompt_template = load_one_prompt('prompts/mcp_prompt.jinja2')
     prompt = prompt_template.format(
         base_prompt=base_prompt,
         apps=processed_apps,

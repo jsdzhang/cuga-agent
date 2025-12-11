@@ -31,11 +31,13 @@ export function StatusBar({ threadId }: StatusBarProps) {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showExamplesPopup, setShowExamplesPopup] = useState(false);
+  const [showModePopup, setShowModePopup] = useState(false);
   const [isInputEmpty, setIsInputEmpty] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set(['tools', 'mode', 'agents', 'connection']));
   const statusBarRef = useRef<HTMLDivElement>(null);
   const agentsPopupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const examplesPopupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modePopupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Log threadId changes for debugging
   useEffect(() => {
@@ -55,6 +57,9 @@ export function StatusBar({ threadId }: StatusBarProps) {
       }
       if (examplesPopupTimeoutRef.current) {
         clearTimeout(examplesPopupTimeoutRef.current);
+      }
+      if (modePopupTimeoutRef.current) {
+        clearTimeout(modePopupTimeoutRef.current);
       }
     };
   }, []);
@@ -156,19 +161,8 @@ export function StatusBar({ threadId }: StatusBarProps) {
   };
 
   const toggleMode = () => {
-    const newMode = mode === "fast" ? "balanced" : "fast";
-    setMode(newMode);
-    console.log('[StatusBar] toggleMode called with threadId:', threadId, 'newMode:', newMode);
-    // Send mode change to backend with thread_id
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (threadId) {
-      headers['X-Thread-ID'] = threadId;
-    }
-    fetch('/api/config/mode', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ mode: newMode, thread_id: threadId }),
-    }).catch(err => console.error("Failed to update mode:", err));
+    // Mode switching disabled - requires local setup
+    return;
   };
 
   const toggleAgentMode = () => {
@@ -281,6 +275,43 @@ export function StatusBar({ threadId }: StatusBarProps) {
   const handleExamplesPopupMouseLeave = () => {
     // Hide the popup when mouse leaves the popup area
     setShowExamplesPopup(false);
+  };
+
+  const handleModeMouseEnter = () => {
+    console.log('[StatusBar] Mode hover entered');
+    // Clear any pending hide timeout
+    if (modePopupTimeoutRef.current) {
+      clearTimeout(modePopupTimeoutRef.current);
+      modePopupTimeoutRef.current = null;
+    }
+    setShowModePopup(true);
+    console.log('[StatusBar] showModePopup set to true');
+  };
+
+  const handleModeMouseLeave = () => {
+    console.log('[StatusBar] Mode hover left');
+    // Delay hiding the popup with longer delay
+    modePopupTimeoutRef.current = setTimeout(() => {
+      setShowModePopup(false);
+      console.log('[StatusBar] showModePopup set to false');
+    }, 500);
+  };
+
+  const handleModePopupMouseEnter = () => {
+    console.log('[StatusBar] Mode popup hover entered');
+    // Clear the hide timeout when mouse enters the popup
+    if (modePopupTimeoutRef.current) {
+      clearTimeout(modePopupTimeoutRef.current);
+      modePopupTimeoutRef.current = null;
+    }
+  };
+
+  const handleModePopupMouseLeave = () => {
+    console.log('[StatusBar] Mode popup hover left');
+    // Delay hiding with longer timeout for stability
+    modePopupTimeoutRef.current = setTimeout(() => {
+      setShowModePopup(false);
+    }, 500);
   };
 
   const connectedTools = tools.filter(t => t.status === "connected");
@@ -518,32 +549,72 @@ export function StatusBar({ threadId }: StatusBarProps) {
 
         {/* Mode Toggle */}
         {visibleItems.has('mode') && (
-          <div className="status-item status-mode">
+          <div 
+            className="status-item status-mode"
+            style={{ position: 'relative', cursor: 'pointer' }}
+            onMouseEnter={handleModeMouseEnter}
+            onMouseLeave={handleModeMouseLeave}
+          >
             <Zap size={14} />
             <div className="mode-toggle">
               <div 
-                className={`mode-option ${mode === "fast" ? "active" : ""}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (mode !== "fast") {
-                    toggleMode();
-                  }
-                }}
+                className={`mode-option ${mode === "fast" ? "active" : ""} disabled`}
+                style={{ cursor: 'not-allowed', opacity: 0.6 }}
               >
                 Lite
               </div>
               <div 
                 className={`mode-option ${mode === "balanced" ? "active" : ""}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (mode !== "balanced") {
-                    toggleMode();
-                  }
-                }}
+                style={{ cursor: 'pointer' }}
               >
                 Balanced
               </div>
             </div>
+
+            {showModePopup && (
+              <div 
+                className="tools-popup"
+                onMouseEnter={handleModePopupMouseEnter}
+                onMouseLeave={handleModePopupMouseLeave}
+              >
+                <div className="tools-popup-header">
+                  <span>This feature works locally</span>
+                </div>
+                <div className="tools-list" style={{ padding: '12px 14px' }}>
+                  <div style={{ marginBottom: '12px', color: '#64748b', fontSize: '13px', lineHeight: '1.5' }}>
+                    Clone the repo to experience full features of CUGA:
+                  </div>
+                  <a 
+                    href="https://github.com/cuga-project/cuga-agent" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style={{
+                      color: '#667eea',
+                      textDecoration: 'none',
+                      fontWeight: 500,
+                      fontSize: '13px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 0',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.textDecoration = 'underline';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.textDecoration = 'none';
+                    }}
+                  >
+                    <span>github.com/cuga-project/cuga-agent</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                      <polyline points="15 3 21 3 21 9"></polyline>
+                      <line x1="10" y1="14" x2="21" y2="3"></line>
+                    </svg>
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

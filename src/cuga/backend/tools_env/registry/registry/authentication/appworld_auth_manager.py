@@ -1,4 +1,4 @@
-import requests
+import httpx
 from cuga.backend.tools_env.registry.registry.authentication.base_auth_manager import BaseAuthManager
 from loguru import logger
 from cuga.config import settings
@@ -14,26 +14,28 @@ class AppWorldAuthManager(BaseAuthManager):
     def _get_user_profile(self):
         url = f"{self.base_url}/supervisor/profile"
         try:
-            r = requests.get(url)
-            r.raise_for_status()
-        except requests.RequestException as e:
+            with httpx.Client(timeout=10.0) as client:
+                r = client.get(url)
+                r.raise_for_status()
+                return r.json()
+        except httpx.RequestError as e:
             print(f"Error fetching user profile: {e}")
             return None
-        return r.json()
 
     def _load_account_passwords(self) -> dict[str, str]:
         url = f"{self.base_url}/supervisor/account_passwords"
         try:
-            r = requests.get(url)
-            r.raise_for_status()
-        except requests.RequestException as e:
+            with httpx.Client(timeout=10.0) as client:
+                r = client.get(url)
+                r.raise_for_status()
+                return {
+                    item["account_name"]: item["password"]
+                    for item in r.json()
+                    if item.get("account_name") and item.get("password")
+                }
+        except httpx.RequestError as e:
             print(f"Error fetching app credentials: {e}")
             return {}
-        return {
-            item["account_name"]: item["password"]
-            for item in r.json()
-            if item.get("account_name") and item.get("password")
-        }
 
     def _get_credentials(self, app_name: str) -> str | None:
         return self._account_passwords.get(app_name)
@@ -44,6 +46,7 @@ class AppWorldAuthManager(BaseAuthManager):
         user_name = self.profile["phone_number"] if app_name == "phone" else {self.profile["email"]}
         logger.debug(f"username: {user_name}")
         logger.debug(f"password: {password}")
-        r = requests.post(url, data={"username": user_name, "password": password})
-        r.raise_for_status()
-        return r.json()
+        with httpx.Client(timeout=10.0) as client:
+            r = client.post(url, data={"username": user_name, "password": password})
+            r.raise_for_status()
+            return r.json()

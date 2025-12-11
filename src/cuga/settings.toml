@@ -32,7 +32,7 @@ enable_fact = false
 save_reuse_generate_html = false  # Generate HTML visualization for saved flows (disabled by default for performance)
 decomposition_strategy = "flexible"  # "exact" = one subtask per app, "flexible" = allows multiple subtasks per app
 e2b_sandbox = false # use e2b for sandbox:
-e2b_sandbox_mode = "per-session"  # E2B sandbox lifecycle: "per-session" = cache per thread_id (default), "single" = shared sandbox for all threads, "per-call" = new sandbox each call
+e2b_sandbox_mode = "single"  # E2B sandbox lifecycle: "per-session" = cache per thread_id (default), "single" = shared sandbox for all threads, "per-call" = new sandbox each call
 message_window_limit = 100  # Maximum number of messages to keep in history (sliding window)
 max_input_length = 50000  # Maximum characters allowed in user input (prevents abuse)
 
@@ -40,7 +40,7 @@ max_input_length = 50000  # Maximum characters allowed in user input (prevents a
 [server_ports]
 registry = 8001
 # registry_host = "http://localhost:8001"  # Optional: Full registry URL. Falls back to "http://localhost:{registry}"
-# function_call_host = "https://your-ngrok-url.com"  # Optional: URL for E2B to call functions. Falls back to registry_host, then "http://localhost:8001"
+# function_call_host = ""  # Optional: URL for E2B to call functions. Falls back to registry_host, then "http://localhost:8001"
 demo = 7860
 apis_url = 9000
 saved_flows = 8003

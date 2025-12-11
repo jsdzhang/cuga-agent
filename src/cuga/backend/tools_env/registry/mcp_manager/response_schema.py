@@ -1,7 +1,7 @@
 import json
 import yaml
 from typing import List, Dict, Any
-import requests
+import httpx
 
 
 def extract_api_ids(api_definitions: List[Dict[str, Any]]) -> List[str]:
@@ -50,7 +50,7 @@ def load_openapi_spec(file_path: str) -> Dict[str, Any]:
         return {}
 
 
-def fetch_openapi_spec(url: str) -> Dict[str, Any]:
+async def fetch_openapi_spec(url: str) -> Dict[str, Any]:
     """
     Fetch an OpenAPI specification from a URL.
 
@@ -61,26 +61,27 @@ def fetch_openapi_spec(url: str) -> Dict[str, Any]:
         OpenAPI specification as a dictionary
     """
     try:
-        response = requests.get(url)
-        response.raise_for_status()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
 
-        if url.endswith('.json'):
-            return response.json()
-        elif url.endswith(('.yaml', '.yml')):
-            return yaml.safe_load(response.text)
-        else:
-            # Try to determine from content type
-            content_type = response.headers.get('Content-Type', '')
-            if 'application/json' in content_type:
+            if url.endswith('.json'):
                 return response.json()
-            elif 'application/yaml' in content_type or 'text/yaml' in content_type:
+            elif url.endswith(('.yaml', '.yml')):
                 return yaml.safe_load(response.text)
             else:
-                # Default to JSON
-                try:
+                # Try to determine from content type
+                content_type = response.headers.get('Content-Type', '')
+                if 'application/json' in content_type:
                     return response.json()
-                except Exception:
+                elif 'application/yaml' in content_type or 'text/yaml' in content_type:
                     return yaml.safe_load(response.text)
+                else:
+                    # Default to JSON
+                    try:
+                        return response.json()
+                    except Exception:
+                        return yaml.safe_load(response.text)
     except Exception as e:
         print(f"Error fetching OpenAPI spec: {e}")
         return {}
