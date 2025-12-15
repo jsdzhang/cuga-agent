@@ -39,7 +39,8 @@ sdk_version: \"4.36\"
 app_file: app.py
 pinned: false
 app_port: 7860
-description: Experience CUGA Agent in action on demo enterprise applications.
+description: Try CUGA Agent on live enterprise demos.
+short_description: Try CUGA Agent on live enterprise demos.
 ---
 
 "

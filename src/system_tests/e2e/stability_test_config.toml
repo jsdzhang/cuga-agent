@@ -18,6 +18,7 @@ cases = [
 [[stability.tests]]
 file = "src/system_tests/e2e/crm_hf_utterances_test.py"
 cases = [
+    "TestCRMHF_Examples::test_get_top_n_accounts_revenue",
     "TestCRMHF_Examples::test_filter_contacts_and_calculate_revenue_percentile",
     "TestCRMHF_Examples::test_show_users_in_crm_system",
     "TestCRMHF_Examples::test_what_is_cuga",

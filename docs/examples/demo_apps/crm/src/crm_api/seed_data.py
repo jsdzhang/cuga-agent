@@ -941,6 +941,88 @@ OPPORTUNITY_DESCRIPTIONS = [
 ]
 
 
+def permuted_revenue(
+    account_id: int,
+    min_value: int = 100_000,
+    max_value: int = 10_000_000,
+    step: int = 10_000,
+    a_hint: int = 1_234_567,
+    b: int = 9_876,
+) -> int:
+    """
+    Deterministic permutation for annual revenue that generates 1000 unique values.
+    - Returns values aligned to 'step' (10k increments)
+    - Same account_id always produces the same revenue value
+    """
+    if step <= 0:
+        raise ValueError("step must be positive")
+
+    # Align to the step
+    min_aligned = ((min_value + step - 1) // step) * step
+    max_aligned = (max_value // step) * step
+    if min_aligned > max_aligned:
+        raise ValueError("Range too narrow after alignment to 'step'.")
+
+    # Number of distinct revenue buckets
+    K = (max_aligned - min_aligned) // step + 1
+
+    # Map ID into [0, K-1]
+    x = account_id % K
+
+    # Pick 'a' coprime with K (so the affine map is a permutation)
+    a = a_hint
+    while gcd(a, K) != 1:
+        a += 1
+
+    # Affine permutation
+    rank = (a * x + b) % K
+
+    # Map back to the value space
+    return min_aligned + rank * step
+
+
+def permuted_value_1k(
+    opportunity_id: int,
+    min_value: int = 5_000,
+    max_value: int = 500_000,
+    step: int = 1_000,
+    a_hint: int = 1_664_525,  # seed for 'a'
+    b: int = 12_345,
+) -> int:
+    """
+    Deterministic permutation over K thousand-buckets so the last 3 digits are 000.
+    - Adjusts min/max to multiples of 'step'.
+    - Uses an affine permutation modulo K: rank = (a*x + b) % K with gcd(a, K) == 1.
+    - Returns: min_aligned + rank*step
+    """
+    if step <= 0:
+        raise ValueError("step must be positive")
+
+    # Align to the step (1,000) so values end with 000
+    min_aligned = ((min_value + step - 1) // step) * step
+    max_aligned = (max_value // step) * step
+    if min_aligned > max_aligned:
+        raise ValueError("Range too narrow after alignment to 'step'.")
+
+    # Number of distinct thousand-buckets
+    K = (max_aligned - min_aligned) // step + 1
+
+    # Map ID into [0, K-1]
+    x = opportunity_id % K
+
+    # Pick 'a' coprime with K (so the affine map is a permutation)
+    a = a_hint
+    # Nudge 'a' until gcd(a, K) == 1
+    while gcd(a, K) != 1:
+        a += 1
+
+    # Affine permutation
+    rank = (a * x + b) % K
+
+    # Map back to the value space (always ends with 000)
+    return min_aligned + rank * step
+
+
 def generate_accounts(count: int = 1000):
     """Generate sample accounts using predefined arrays"""
     accounts = []
@@ -966,8 +1048,8 @@ def generate_accounts(count: int = 1000):
         # Generate address
         address = f"{100 + (i % 9000)} {CITIES[i % len(CITIES)]} Street"
 
-        # Generate revenue and employee count with some variation
-        annual_revenue = 100000 + (i % 100) * 50000  # 100k to 5M
+        # Generate revenue using deterministic permutation (1000 unique values)
+        annual_revenue = permuted_revenue(i, min_value=100_000, max_value=10_000_000, step=10_000)
         employee_count = 10 + (i % 100) * 50  # 10 to 5000
 
         account = Account(
@@ -1072,48 +1154,6 @@ def generate_contacts(accounts: list, contacts_per_account: int = 5):
             contacts.append(contact)
             contact_id += 1
     return contacts
-
-
-def permuted_value_1k(
-    opportunity_id: int,
-    min_value: int = 5_000,
-    max_value: int = 500_000,
-    step: int = 1_000,
-    a_hint: int = 1_664_525,  # seed for 'a'
-    b: int = 12_345,
-) -> int:
-    """
-    Deterministic permutation over K thousand-buckets so the last 3 digits are 000.
-    - Adjusts min/max to multiples of 'step'.
-    - Uses an affine permutation modulo K: rank = (a*x + b) % K with gcd(a, K) == 1.
-    - Returns: min_aligned + rank*step
-    """
-    if step <= 0:
-        raise ValueError("step must be positive")
-
-    # Align to the step (1,000) so values end with 000
-    min_aligned = ((min_value + step - 1) // step) * step
-    max_aligned = (max_value // step) * step
-    if min_aligned > max_aligned:
-        raise ValueError("Range too narrow after alignment to 'step'.")
-
-    # Number of distinct thousand-buckets
-    K = (max_aligned - min_aligned) // step + 1
-
-    # Map ID into [0, K-1]
-    x = opportunity_id % K
-
-    # Pick 'a' coprime with K (so the affine map is a permutation)
-    a = a_hint
-    # Nudge 'a' until gcd(a, K) == 1
-    while gcd(a, K) != 1:
-        a += 1
-
-    # Affine permutation
-    rank = (a * x + b) % K
-
-    # Map back to the value space (always ends with 000)
-    return min_aligned + rank * step
 
 
 def generate_opportunities(accounts: list, opportunities_per_account: int = 8):

@@ -51,6 +51,31 @@ class TestCRMHF_Examples(BaseCRMTestServerStream):
         await asyncio.sleep(10)
         print("--- Sleep complete ---")
 
+    async def test_get_top_n_accounts_revenue(self):
+        """
+        Test use case 2: Get top 5 accounts by revenue.
+        """
+        print(f"Running test with thread ID: {self.thread_id}")
+
+        query = "get the top 5 accounts by revenue"
+
+        all_events = await self.run_task(query, thread_id=self.thread_id)
+
+        self._assert_answer_event(
+            all_events,
+            expected_keywords=[
+                "Sigma Systems",
+                "Approved Technologies",
+                "Chi Systems",
+                "Profitable Inc",
+                "Phi Chi Inc",
+            ],
+        )
+
+        print("\n--- Sleeping for 10 seconds to allow traces to save ---")
+        await asyncio.sleep(10)
+        print("--- Sleep complete ---")
+
     async def test_show_users_in_crm_system(self):
         """
         Test use case 2: Show which users from contacts.txt belong to the CRM system.

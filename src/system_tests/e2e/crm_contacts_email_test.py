@@ -39,10 +39,9 @@ In addition send an email to my assistant requesting to schedule meetings with t
             all_events,
             expected_keywords=[
                 "Sarah",
-                "Gamma",
-                "Delta",
-                "Upsilon",
-                "Sharon",
+                "Ruth",
+                "gamma",
+                "sigma",
             ],
         )
 

@@ -98,7 +98,7 @@ class BaseTestServerStream(unittest.IsolatedAsyncioTestCase):
 
         return killed_any
 
-    async def wait_for_server(self, port: int, max_retries: int = 120, retry_interval: float = 0.5):
+    async def wait_for_server(self, port: int, max_retries: int = 250, retry_interval: float = 0.5):
         """
         Wait for a server to be ready by pinging its health endpoint.
 
@@ -145,8 +145,25 @@ class BaseTestServerStream(unittest.IsolatedAsyncioTestCase):
 
         # Remove existing test folder if it exists (to reset for rerun)
         if os.path.exists(self.test_log_dir):
-            shutil.rmtree(self.test_log_dir)
-            print(f"Removed existing test folder: {self.test_log_dir}")
+            try:
+                shutil.rmtree(self.test_log_dir)
+                print(f"Removed existing test folder: {self.test_log_dir}")
+            except (OSError, PermissionError) as e:
+                print(f"Warning: Could not remove test folder {self.test_log_dir}: {e}")
+                print("Attempting to clear log files individually...")
+                # If folder removal fails, try to clear log files individually
+                log_file_names = ["demo_server.log", "registry_server.log", "digital_sales_mcp.log"]
+                if self.enable_memory_service:
+                    log_file_names.append("memory_server.log")
+                for log_name in log_file_names:
+                    log_path = os.path.join(self.test_log_dir, log_name)
+                    if os.path.exists(log_path):
+                        try:
+                            with open(log_path, 'w') as f:
+                                f.write('')  # Truncate the file
+                            print(f"Cleared log file: {log_path}")
+                        except (OSError, PermissionError) as log_error:
+                            print(f"Warning: Could not clear log file {log_path}: {log_error}")
 
         # Create the test-specific folder
         os.makedirs(self.test_log_dir, exist_ok=True)
@@ -165,9 +182,12 @@ class BaseTestServerStream(unittest.IsolatedAsyncioTestCase):
         if self.memory_log_file:
             log_files.append(self.memory_log_file)
         for log_file in log_files:
-            with open(log_file, 'w') as f:
-                f.write('')  # Clear the file
-            print(f"Cleared log file: {log_file}")
+            try:
+                with open(log_file, 'w') as f:
+                    f.write('')  # Clear the file
+                print(f"Cleared log file: {log_file}")
+            except (OSError, PermissionError) as e:
+                print(f"Warning: Could not clear log file {log_file}: {e}")
 
         print(f"Demo server logs will be saved to: {self.demo_log_file}")
         print(f"Registry server logs will be saved to: {self.registry_log_file}")

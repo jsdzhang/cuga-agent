@@ -654,10 +654,10 @@ class CugaAgent:
             usage_metrics['error'] = 'interrupted'
             return "Error: Interrupted by user", usage_metrics, state_messages, None
         except Exception as e:
-            logger.error(f"Error during execution: {e}", exc_info=True)
+            logger.error("Error during execution: {}", str(e), exc_info=True)
             usage_metrics = metrics_callback.get_metrics()
             usage_metrics['error'] = str(e)
-            return f"Error during execution: {e}", usage_metrics, state_messages, None
+            return f"Error during execution: {str(e)}", usage_metrics, state_messages, None
 
     def list_apps(self) -> List[Dict[str, str]]:
         """Get list of loaded apps."""

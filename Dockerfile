@@ -24,7 +24,7 @@ COPY src/ ./src/
 COPY docs/ ./docs/
 
 # Install dependencies
-RUN uv sync
+RUN uv sync --group groq
 
 # Create cuga_workspace directory
 RUN mkdir -p /app/cuga_workspace
