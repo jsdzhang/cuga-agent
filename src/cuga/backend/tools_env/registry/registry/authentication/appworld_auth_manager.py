@@ -43,7 +43,7 @@ class AppWorldAuthManager(BaseAuthManager):
     def _fetch_token(self, app_name: str, password: str) -> dict:
         logger.debug("Fetching token..")
         url = f"{self.base_url}/{app_name}/auth/token"
-        user_name = self.profile["phone_number"] if app_name == "phone" else {self.profile["email"]}
+        user_name = self.profile["phone_number"] if app_name == "phone" else self.profile["email"]
         logger.debug(f"username: {user_name}")
         logger.debug(f"password: {password}")
         with httpx.Client(timeout=10.0) as client:

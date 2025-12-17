@@ -46,7 +46,6 @@ def _find_config_file(filename: str, env_var_name: str) -> str:
 
 
 SETTINGS_TOML_PATH = _find_config_file("settings.toml", "SETTINGS_TOML_PATH")
-EVAL_CONFIG_TOML_PATH = _find_config_file("eval_config.toml", "EVAL_CONFIG_TOML_PATH")
 CONFIGURATIONS_DIR = os.environ.get("CUGA_CONFIGURATIONS_DIR", os.path.join(PACKAGE_ROOT, "configurations"))
 MODELS_DIR = os.path.join(CONFIGURATIONS_DIR, "models")
 MODES_DIR = os.path.join(CONFIGURATIONS_DIR, "modes")
@@ -135,6 +134,9 @@ validators = [
     Validator("playwright_args", default=[]),
     Validator("server_ports.registry_host", default=None),
 ]
+
+EVAL_CONFIG_TOML_PATH = _find_config_file("eval_config.toml", "EVAL_CONFIG_TOML_PATH")
+
 base_settings = Dynaconf(
     root_path=PACKAGE_ROOT,
     settings_files=[
