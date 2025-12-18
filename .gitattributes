@@ -6,11 +6,12 @@ src/frontend_workspaces/frontend/dist/** linguist-vendored
 src/frontend_workspaces/shared/dist/** -diff
 src/frontend_workspaces/shared/dist/** linguist-vendored
 
-# Ignore all JSON/YAML/TXT files
-*.json
-*.yaml
-*.yml
-*.txt
+# Ignore all JSON/YAML/TXT/CSV files (nested across repo)
+**/*.json
+**/*.yaml
+**/*.yml
+**/*.txt
+**/*.csv
 
 # (Optional) keep important ones
 \!package.json
